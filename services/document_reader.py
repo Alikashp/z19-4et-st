@@ -1,52 +1,34 @@
-import io
-from aiogram.types import Document
+from pathlib import Path
+from docx import Document as DocxDocument
 
-MAX_SIZE_BYTES = 110 * 1024  # 110 КБ
+MAX_FILE_SIZE = 110 * 1024
+SUPPORTED_EXTENSIONS = {".txt", ".docx"}
 
 
-async def read_document(document: Document, bot: Bot) -> str:
-    """
-    Скачивает и читает документ из Telegram.
-    Поддерживает .txt и .docx.
-    Возвращает текст или выбрасывает исключение.
-    """
-    file_name = document.file_name or ""
-    file_size = document.file_size or 0
+async def validate_document(file_name: str, file_size: int | None) -> tuple[bool, str]:
+    ext = Path(file_name).suffix.lower()
 
-    if file_size > MAX_SIZE_BYTES:
-        raise ValueError(
-            f"Файл слишком большой ({file_size // 1024} КБ). "
-            f"Максимальный размер — 110 КБ."
+    if ext not in SUPPORTED_EXTENSIONS:
+        return False, "Пока я принимаю только .txt и .docx."
+
+    if file_size and file_size > MAX_FILE_SIZE:
+        return False, "Файл слишком большой. Загрузите документ до 110 КБ или вставьте текст сообщением."
+
+    return True, ""
+
+
+def read_document(path: str) -> str:
+    ext = Path(path).suffix.lower()
+
+    if ext == ".txt":
+        return Path(path).read_text(encoding="utf-8", errors="ignore")
+
+    if ext == ".docx":
+        doc = DocxDocument(path)
+        return "\n".join(
+            paragraph.text
+            for paragraph in doc.paragraphs
+            if paragraph.text.strip()
         )
 
-    ext = file_name.lower().rsplit(".", 1)[-1] if "." in file_name else ""
-    if ext not in ("txt", "docx"):
-        raise ValueError(
-            f"Формат .{ext} не поддерживается. "
-            f"Отправьте файл с расширением .txt или .docx."
-        )
-
-    # Скачиваем файл в память
-    file = await bot.get_file(document.file_id)
-    buf = io.BytesIO()
-    await bot.download_file(file.file_path, destination=buf)
-    buf.seek(0)
-
-    if ext == "txt":
-        raw = buf.read()
-        for encoding in ("utf-8", "cp1251", "latin-1"):
-            try:
-                return raw.decode(encoding)
-            except UnicodeDecodeError:
-                continue
-        raise ValueError("Не удалось определить кодировку файла.")
-
-    if ext == "docx":
-        try:
-            from docx import Document as DocxDocument
-            doc = DocxDocument(buf)
-            return "\n".join(p.text for p in doc.paragraphs if p.text.strip())
-        except Exception as e:
-            raise ValueError(f"Ошибка чтения .docx: {e}")
-
-    raise ValueError("Неподдерживаемый формат.")
+    raise ValueError("Неподдерживаемый формат документа")
