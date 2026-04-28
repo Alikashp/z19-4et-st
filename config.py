@@ -12,7 +12,10 @@ YOOKASSA_SHOP_ID = os.getenv("YOOKASSA_SHOP_ID", "")
 YOOKASSA_SECRET_KEY = os.getenv("YOOKASSA_SECRET_KEY", "")
 PAYMENT_PROVIDER = os.getenv("PAYMENT_PROVIDER", "yookassa")
 
-DATABASE_URL = "sqlite+aiosqlite:///./study_bot.db"
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./study_bot.db")
+
+if DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 
 # Tariffs config
 TARIFFS = [
