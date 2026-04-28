@@ -1,5 +1,5 @@
 import io
-from aiogram.types import Document, Bot
+from aiogram.types import Document
 
 MAX_SIZE_BYTES = 110 * 1024  # 110 КБ
 
