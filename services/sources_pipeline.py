@@ -22,6 +22,10 @@ OPENALEX_TYPES_BY_MODE = {
     "mixed": ["article", "book", "book-chapter", "monograph", "report", "standard"],
 }
 
+CROSSREF_ALLOWED_TYPES = {
+    "journal-article", "book", "book-chapter", "monograph", "report", "standard", "proceedings-article"
+}
+
 TERM_TRANSLATIONS = {
     "управление требованиями": ["requirements management", "requirements engineering"],
     "требования стейкхолдеров": ["stakeholder requirements"],
@@ -34,20 +38,54 @@ TERM_TRANSLATIONS = {
 }
 
 RELEVANCE_WEIGHTS = {
-    "requirements": 3, "requirements engineering": 3, "requirements management": 3,
-    "stakeholder": 3, "stakeholders": 3,
-    "startup": 2, "startups": 2,
-    "software": 2, "it": 2, "digital product": 2,
-    "agile": 1, "lean": 1, "prioritization": 1, "product development": 1,
+    "requirements": 3,
+    "requirements engineering": 3,
+    "requirements management": 3,
+    "stakeholder": 3,
+    "stakeholders": 3,
+    "startup": 2,
+    "startups": 2,
+    "software": 2,
+    "it": 2,
+    "digital product": 2,
+    "agile": 1,
+    "lean": 1,
+    "prioritization": 1,
+    "product development": 1,
 }
 
 CURATED_REGISTRY = {
     "project management": [
-        {"title": "A Guide to the Project Management Body of Knowledge (PMBOK® Guide)", "authors": ["Project Management Institute"], "year": 2021, "publisher": "Project Management Institute", "source": "Project Management Institute", "source_type": "standard", "standard_number": "PMBOK 7"},
+        {
+            "title": "A Guide to the Project Management Body of Knowledge (PMBOK® Guide)",
+            "authors": ["Project Management Institute"],
+            "year": 2021,
+            "publisher": "Project Management Institute",
+            "source": "Project Management Institute",
+            "source_type": "standard",
+            "standard_number": "PMBOK 7",
+        },
+        {
+            "title": "ISO 21502:2020 Project, programme and portfolio management — Guidance on project management",
+            "authors": ["ISO"],
+            "year": 2020,
+            "publisher": "ISO",
+            "source": "ISO",
+            "source_type": "standard",
+            "standard_number": "ISO 21502:2020",
+        },
     ],
-    "requirements engineering": [
-        {"title": "ISO/IEC/IEEE 29148:2018 Systems and software engineering — Life cycle processes — Requirements engineering", "authors": ["ISO/IEC/IEEE"], "year": 2018, "publisher": "ISO", "source": "ISO/IEC/IEEE", "source_type": "standard", "standard_number": "ISO/IEC/IEEE 29148:2018"},
-    ]
+    "information security": [
+        {
+            "title": "ISO/IEC 27001:2022 Information security, cybersecurity and privacy protection — Information security management systems — Requirements",
+            "authors": ["ISO/IEC"],
+            "year": 2022,
+            "publisher": "ISO",
+            "source": "ISO/IEC",
+            "source_type": "standard",
+            "standard_number": "ISO/IEC 27001:2022",
+        }
+    ],
 }
 
 
@@ -73,43 +111,88 @@ class SourceRecord:
     verified_by_crossref: bool = False
 
 
+class SourcesPipelineError(RuntimeError):
+    pass
+
+
 def _norm(s: str) -> str:
     return re.sub(r"[^\w\s]", "", re.sub(r"\s+", " ", (s or "").strip().lower()))
 
 
 def _normalize_doi(raw: str | None) -> str:
-    return re.sub(r"^https?://(dx\.)?doi\.org/", "", (raw or "").strip(), flags=re.IGNORECASE).lower()
+    if not raw:
+        return ""
+    return re.sub(r"^https?://(dx\.)?doi\.org/", "", raw.strip(), flags=re.IGNORECASE).lower()
 
 
-def _year_from_item(item: dict) -> int | None:
-    y = item.get("publication_year")
-    if y:
-        return y
-    d = item.get("publication_date") or ""
+def _normalize_title(raw: str) -> str:
+    return re.sub(r"[^\w\s]", "", re.sub(r"\s+", " ", (raw or "").strip().lower()))
+
+
+def _normalize_person_name(name: str) -> str:
+    value = (name or "").strip()
+    if value.isupper() and any(ch.isalpha() for ch in value):
+        return value.title()
+    return value
+
+
+def _extract_standard_number(title: str) -> str:
+    match = re.search(r"\b(?:ISO|IEC|ISO/IEC|IEEE)\s?[\w\-/.:]+", title or "", re.IGNORECASE)
+    return match.group(0).strip() if match else ""
+
+
+def _parse_openalex_year(item: dict) -> int | None:
+    year = item.get("publication_year")
+    if year:
+        return year
+    pub_date = item.get("publication_date") or ""
     try:
-        return date.fromisoformat(d).year if d else None
+        return date.fromisoformat(pub_date).year if pub_date else None
     except ValueError:
         return None
+
+
+def _is_reliable_openalex_metadata(record: SourceRecord) -> bool:
+    if record.source_type == "standard":
+        return bool(record.title and record.year and (record.standard_number or record.source))
+    if record.source_type == "book":
+        return bool(record.title and record.year and (record.publisher or record.source))
+    return bool(record.title and record.year and record.source)
 
 
 def build_search_queries(topic: str) -> list[str]:
     t = topic.lower().strip()
     queries = [t]
+
     for ru, en_list in TERM_TRANSLATIONS.items():
         if ru in t:
             queries.extend(en_list)
-    # combine meaningful blocks
-    if any(x in t for x in ["требован", "requirements"]):
-        queries += ["requirements management software startups", "requirements engineering software startups", "agile requirements engineering startups"]
-    if any(x in t for x in ["стейкхолдер", "stakeholder"]):
-        queries += ["stakeholder requirements software development", "stakeholder management software development"]
-    if any(x in t for x in ["стартап", "startup"]):
-        queries += ["lean startup requirements engineering", "product development software startups stakeholders"]
-    queries += ["requirements engineering software development", "stakeholder management software projects", "agile requirements engineering"]
 
-    # unique and 3-8 preferred (allow up to 10)
-    uniq = []
-    seen = set()
+    if any(x in t for x in ["требован", "requirements"]):
+        queries += [
+            "requirements management software startups",
+            "requirements engineering software startups",
+            "agile requirements engineering startups",
+        ]
+    if any(x in t for x in ["стейкхолдер", "stakeholder"]):
+        queries += [
+            "stakeholder requirements software development",
+            "stakeholder management software development",
+        ]
+    if any(x in t for x in ["стартап", "startup"]):
+        queries += [
+            "lean startup requirements engineering",
+            "product development software startups stakeholders",
+        ]
+
+    queries += [
+        "requirements engineering software development",
+        "stakeholder management software projects",
+        "agile requirements engineering",
+    ]
+
+    uniq: list[str] = []
+    seen: set[str] = set()
     for q in queries:
         key = _norm(q)
         if key and key not in seen:
@@ -131,124 +214,260 @@ def _relevance_score(rec: SourceRecord, query_terms: list[str]) -> int:
 
 
 async def _openalex_query(query: str, openalex_types: list[str], per_page: int) -> list[SourceRecord]:
-    params = {"search": query, "filter": f"type:{'|'.join(openalex_types)}", "sort": "cited_by_count:desc", "per-page": per_page}
+    params = {
+        "search": query,
+        "filter": f"type:{'|'.join(openalex_types)}",
+        "sort": "cited_by_count:desc",
+        "per-page": per_page,
+    }
+
     async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
         r = await client.get(OPENALEX_URL, params=params)
         r.raise_for_status()
-    out = []
+
+    out: list[SourceRecord] = []
     for item in r.json().get("results", []):
-        y = _year_from_item(item)
+        y = _parse_openalex_year(item)
         if not y:
             continue
+
         t = (item.get("type") or "").lower().strip()
-        mapped = "book" if t in {"book", "book-chapter", "monograph"} else ("standard" if t == "standard" else ("report" if t == "report" else "article"))
+        mapped = (
+            "book" if t in {"book", "book-chapter", "monograph"}
+            else "standard" if t == "standard"
+            else "report" if t == "report"
+            else "article"
+        )
+
         biblio = item.get("biblio", {}) or {}
         title = (item.get("title") or "").strip()
         abstract_index = item.get("abstract_inverted_index") or {}
-        abstract = " ".join(sorted(abstract_index, key=lambda k: min(abstract_index[k]) if abstract_index[k] else 0)) if abstract_index else ""
-        out.append(SourceRecord(
-            title=title,
-            authors=[(a.get("author", {}).get("display_name") or "").strip() for a in item.get("authorships", []) if a.get("author", {}).get("display_name")],
-            year=y,
-            source=(item.get("primary_location", {}).get("source", {}).get("display_name") or "").strip(),
-            publisher=(item.get("primary_location", {}).get("source", {}).get("host_organization_name") or "").strip(),
-            doi=_normalize_doi(item.get("doi")),
-            work_type=t,
-            source_type=mapped,
-            publication_date=item.get("publication_date") or "",
-            landing_page_url=(item.get("primary_location", {}).get("landing_page_url") or "").strip(),
-            standard_number=(re.search(r"\b(?:ISO|IEC|ISO/IEC|IEEE)\s?[\w\-/.:]+", title, re.IGNORECASE).group(0).strip() if re.search(r"\b(?:ISO|IEC|ISO/IEC|IEEE)\s?[\w\-/.:]+", title, re.IGNORECASE) else ""),
-            volume=str(biblio.get("volume") or ""),
-            issue=str(biblio.get("issue") or ""),
-            pages=(f"{biblio.get('first_page','')}-{biblio.get('last_page','')}".strip("-") if (biblio.get("first_page") or biblio.get("last_page")) else ""),
-            abstract=abstract,
-            openalex_id=item.get("id") or "",
-        ))
+        abstract = (
+            " ".join(sorted(abstract_index, key=lambda k: min(abstract_index[k]) if abstract_index[k] else 0))
+            if abstract_index else ""
+        )
+
+        out.append(
+            SourceRecord(
+                title=title,
+                authors=[
+                    _normalize_person_name((a.get("author", {}).get("display_name") or "").strip())
+                    for a in item.get("authorships", [])
+                    if a.get("author", {}).get("display_name")
+                ],
+                year=y,
+                source=(item.get("primary_location", {}).get("source", {}).get("display_name") or "").strip(),
+                publisher=(item.get("primary_location", {}).get("source", {}).get("host_organization_name") or "").strip(),
+                doi=_normalize_doi(item.get("doi")),
+                work_type=t,
+                source_type=mapped,
+                publication_date=item.get("publication_date") or "",
+                landing_page_url=(item.get("primary_location", {}).get("landing_page_url") or "").strip(),
+                standard_number=_extract_standard_number(title),
+                volume=str(biblio.get("volume") or ""),
+                issue=str(biblio.get("issue") or ""),
+                pages=(
+                    f"{biblio.get('first_page','')}-{biblio.get('last_page','')}".strip("-")
+                    if (biblio.get("first_page") or biblio.get("last_page"))
+                    else ""
+                ),
+                abstract=abstract,
+                openalex_id=item.get("id") or "",
+            )
+        )
     return out
 
 
-def _dedupe(records: list[SourceRecord]) -> list[SourceRecord]:
-    d, t, s = set(), set(), set()
-    out = []
-    for r in records:
-        if r.doi and r.doi in d:
+def _dedupe_sources(records: list[SourceRecord]) -> list[SourceRecord]:
+    seen_doi: set[str] = set()
+    seen_titles: set[str] = set()
+    seen_standards: set[str] = set()
+    unique: list[SourceRecord] = []
+
+    for rec in records:
+        if rec.doi and rec.doi in seen_doi:
             continue
-        tk = _norm(r.title)
-        if tk and tk in t:
+        t = _normalize_title(rec.title)
+        if t and t in seen_titles:
             continue
-        sk = _norm(r.standard_number)
-        if sk and sk in s:
+        s = _normalize_title(rec.standard_number)
+        if s and s in seen_standards:
             continue
-        if r.doi: d.add(r.doi)
-        if tk: t.add(tk)
-        if sk: s.add(sk)
-        out.append(r)
-    return out
+
+        if rec.doi:
+            seen_doi.add(rec.doi)
+        if t:
+            seen_titles.add(t)
+        if s:
+            seen_standards.add(s)
+
+        unique.append(rec)
+
+    return unique
 
 
-def _inject_curated(topic: str) -> list[SourceRecord]:
-    out = []
+def _inject_curated_sources(topic: str) -> list[SourceRecord]:
+    out: list[SourceRecord] = []
+    tl = topic.lower()
+
     for key, items in CURATED_REGISTRY.items():
-        if key in topic.lower() or any(k in topic.lower() for k in key.split()):
+        if key in tl or any(k in tl for k in key.split()):
             for i in items:
                 if i["year"] < MIN_YEAR:
                     continue
-                out.append(SourceRecord(i["title"], i["authors"], i["year"], i["source"], i["publisher"], "", i["source_type"], i["source_type"], f"{i['year']}-01-01", "", i["standard_number"], "", "", "", "", "curated", score=5, verified_by_crossref=True))
+                out.append(
+                    SourceRecord(
+                        title=i["title"],
+                        authors=i["authors"],
+                        year=i["year"],
+                        source=i["source"],
+                        publisher=i["publisher"],
+                        doi="",
+                        work_type=i["source_type"],
+                        source_type=i["source_type"],
+                        publication_date=f"{i['year']}-01-01",
+                        landing_page_url="",
+                        standard_number=i["standard_number"],
+                        volume="",
+                        issue="",
+                        pages="",
+                        abstract="",
+                        openalex_id="curated",
+                        score=5,
+                        verified_by_crossref=True,
+                    )
+                )
     return out
 
 
 def _crossref_year(item: dict, fallback: int | None) -> int | None:
-    for k in ("published-print", "published-online", "issued", "created"):
-        parts = item.get(k, {}).get("date-parts") if isinstance(item.get(k), dict) else None
+    for key in ("published-print", "published-online", "created", "issued"):
+        parts = item.get(key, {}).get("date-parts") if isinstance(item.get(key), dict) else None
         if parts and parts[0]:
             return parts[0][0]
     return fallback
 
 
-async def _verify_crossref(client: httpx.AsyncClient, src: SourceRecord) -> SourceRecord | None:
-    if src.openalex_id == "curated":
-        return src
+async def _verify_single_with_crossref(client: httpx.AsyncClient, source: SourceRecord) -> tuple[bool, SourceRecord]:
+    if source.openalex_id == "curated":
+        return True, source
+
     try:
-        resp = await (client.get(f"{CROSSREF_WORKS_URL}/{src.doi}") if src.doi else client.get(CROSSREF_WORKS_URL, params={"query.title": src.title, "rows": 1}))
+        resp = await (
+            client.get(f"{CROSSREF_WORKS_URL}/{source.doi}")
+            if source.doi
+            else client.get(CROSSREF_WORKS_URL, params={"query.title": source.title, "rows": 1})
+        )
         resp.raise_for_status()
     except httpx.HTTPError:
-        return src if src.year and src.year >= MIN_YEAR else None
+        return False, source
+
     payload = resp.json() if isinstance(resp.json(), dict) else {}
     msg = payload.get("message", {}) if isinstance(payload, dict) else {}
     if not isinstance(msg, dict):
         msg = {}
-    if src.doi:
+
+    if source.doi:
         item = msg
     else:
         items = msg.get("items", []) if isinstance(msg.get("items"), list) else []
         item = items[0] if items and isinstance(items[0], dict) else {}
-    src.year = _crossref_year(item, src.year)
-    if not src.year or src.year < MIN_YEAR:
-        return None
-    src.volume = str(item.get("volume") or src.volume)
-    src.issue = str(item.get("issue") or src.issue)
-    src.pages = str(item.get("page") or src.pages)
-    src.publisher = item.get("publisher") or src.publisher
-    src.source = (item.get("container-title", [""])[0] if isinstance(item.get("container-title"), list) else item.get("container-title")) or src.source
-    src.verified_by_crossref = True
-    return src
+
+    ctype = (item.get("type") or "").lower()
+    if ctype and ctype not in CROSSREF_ALLOWED_TYPES:
+        return False, source
+
+    cr_title = " ".join(item.get("title", [])) if isinstance(item.get("title"), list) else (item.get("title") or "")
+    if not source.doi and _normalize_title(cr_title) != _normalize_title(source.title):
+        return False, source
+
+    source.year = _crossref_year(item, source.year)
+    if not source.year or source.year < MIN_YEAR:
+        return False, source
+
+    source.volume = str(item.get("volume") or source.volume or "")
+    source.issue = str(item.get("issue") or source.issue or "")
+    source.pages = str(item.get("page") or source.pages or "")
+    source.publisher = item.get("publisher") or source.publisher
+    source.source = (
+        item.get("container-title", [""])[0]
+        if isinstance(item.get("container-title"), list)
+        else item.get("container-title")
+    ) or source.source
+    source.authors = [
+        _normalize_person_name(f"{a.get('family','')} {a.get('given','')}".strip())
+        for a in item.get("author", [])
+        if isinstance(a, dict)
+    ] or source.authors
+    source.title = cr_title.strip() or source.title
+    source.verified_by_crossref = True
+
+    return True, source
 
 
-def _mixed_pick(items: list[SourceRecord], count: int) -> list[SourceRecord]:
-    quotas = {"article": max(1, round(count * 0.5)), "book": max(1, round(count * 0.25)), "standard": max(1, round(count * 0.15)), "report": max(1, round(count * 0.1))}
-    out = []
-    for typ in ["article", "book", "standard", "report"]:
-        out.extend([x for x in items if x.source_type == typ][:quotas[typ]])
-    if len(out) < count:
-        out.extend([x for x in items if x not in out][:count-len(out)])
-    return out[:count]
+async def verify_sources_with_crossref(candidates: list[SourceRecord]) -> list[SourceRecord]:
+    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+        checked = await asyncio.gather(
+            *[_verify_single_with_crossref(client, s) for s in candidates],
+            return_exceptions=True,
+        )
+
+    verified: list[SourceRecord] = []
+    for source, result in zip(candidates, checked):
+        if isinstance(result, Exception):
+            ok, enriched = False, source
+        else:
+            ok, enriched = result
+
+        if enriched.year and enriched.year >= MIN_YEAR and (ok or _is_reliable_openalex_metadata(enriched)):
+            verified.append(enriched)
+
+    return _dedupe_sources(verified)
 
 
-def _format_prompt(items: list[SourceRecord], fmt: str) -> str:
+def _select_mixed_sources(sources: list[SourceRecord], count: int) -> list[SourceRecord]:
+    buckets: dict[str, list[SourceRecord]] = {"article": [], "book": [], "standard": [], "report": []}
+    for s in sources:
+        buckets.setdefault(s.source_type, []).append(s)
+
+    quotas = {
+        "article": max(1, round(count * 0.5)),
+        "book": max(1, round(count * 0.25)),
+        "standard": max(1, round(count * 0.15)),
+        "report": max(1, round(count * 0.1)),
+    }
+
+    selected: list[SourceRecord] = []
+    for kind in ["article", "book", "standard", "report"]:
+        selected.extend(buckets.get(kind, [])[:quotas[kind]])
+
+    if len(selected) < count:
+        leftovers = [s for s in sources if s not in selected]
+        selected.extend(leftovers[: max(0, count - len(selected))])
+
+    return selected[:count]
+
+
+def _build_format_prompt(verified_sources: list[SourceRecord], fmt: str) -> str:
     lines = []
-    for i, s in enumerate(items, 1):
-        lines.append(f"{i}) source_type={s.source_type}; title={s.title}; authors={', '.join(s.authors) if s.authors else 'N/A'}; year={s.year}; source={s.source or 'N/A'}; publisher={s.publisher or 'N/A'}; volume={s.volume or 'N/A'}; issue={s.issue or 'N/A'}; pages={s.pages or 'N/A'}; DOI: {s.doi or 'N/A'}; standard_number={s.standard_number or 'N/A'}")
-    return f"Оформи ТОЛЬКО verified_sources в формате {fmt}. Не добавляй новые источники, не выдумывай поля. Не переводи названия. Верни только список.\n\nverified_sources:\n" + "\n".join(lines)
+    for i, s in enumerate(verified_sources, start=1):
+        doi = f"DOI: {s.doi}" if s.doi else "DOI: N/A"
+        lines.append(
+            f"{i}) source_type={s.source_type}; title={s.title}; authors={', '.join(s.authors) if s.authors else 'N/A'}; "
+            f"year={s.year}; source={s.source or 'N/A'}; publisher={s.publisher or 'N/A'}; volume={s.volume or 'N/A'}; "
+            f"issue={s.issue or 'N/A'}; pages={s.pages or 'N/A'}; {doi}; standard_number={s.standard_number or 'N/A'}"
+        )
+
+    return (
+        f"Оформи ТОЛЬКО verified_sources в формате {fmt}.\n"
+        "GPT только оформляет, не ищет и не добавляет источники из памяти.\n"
+        "Не придумывай год, страницы, DOI, авторов, журнал, издательство, ISBN, URL.\n"
+        "Не переводи названия. Русские оставляй на русском, английские на английском.\n"
+        "Не пиши авторов КАПСОМ. Для DOI используй единый вид: DOI: 10.xxxx/xxxx.\n"
+        "URL вида doi.org добавляй только если формат явно требует URL.\n"
+        "Учитывай source_type (article/book/standard/report). Верни только список.\n\n"
+        "verified_sources:\n" + "\n".join(lines)
+    )
 
 
 async def generate_sources_by_topic(topic: str, count: int, fmt: str, mode: str = "mixed") -> str:
@@ -262,9 +481,11 @@ async def generate_sources_by_topic(topic: str, count: int, fmt: str, mode: str 
             candidates.extend(await _openalex_query(q, openalex_types, per_page=15))
         except httpx.HTTPError:
             continue
+
     if mode in {"mixed", "standards"}:
-        candidates.extend(_inject_curated(topic))
-    candidates = _dedupe(candidates)
+        candidates.extend(_inject_curated_sources(topic))
+
+    candidates = _dedupe_sources(candidates)
     if not candidates:
         return "Надежные источники по теме не найдены после расширенного поиска OpenAlex/Crossref."
 
@@ -272,21 +493,18 @@ async def generate_sources_by_topic(topic: str, count: int, fmt: str, mode: str 
     for c in candidates:
         c.score = _relevance_score(c, query_terms)
 
-    min_score = 4
-    filtered = [x for x in candidates if x.score >= min_score]
+    filtered = [x for x in candidates if x.score >= 4]
     if len(filtered) < max(3, count):
         filtered = [x for x in candidates if x.score >= 2]
 
-    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
-        verified = await asyncio.gather(*[_verify_crossref(client, s) for s in filtered], return_exceptions=True)
-    verified_sources = [x for x in verified if isinstance(x, SourceRecord)]
-    verified_sources = sorted(_dedupe(verified_sources), key=lambda x: x.score, reverse=True)
-    selected = _mixed_pick(verified_sources, count) if mode == "mixed" else verified_sources[:count]
+    verified = await verify_sources_with_crossref(filtered)
+    verified = sorted(verified, key=lambda x: x.score, reverse=True)
 
+    selected = _select_mixed_sources(verified, count) if mode == "mixed" else verified[:count]
     if not selected:
         return "Надежные источники по теме не найдены после расширенного поиска и верификации."
 
-    formatted = await generate_text(_format_prompt(selected, fmt), max_tokens=2000)
+    formatted = await generate_text(_build_format_prompt(selected, fmt), max_tokens=2000)
     if len(selected) < count:
         return f"⚠️ Надежных источников найдено меньше запрошенного ({len(selected)} из {count}).\n\n{formatted}"
     return formatted
