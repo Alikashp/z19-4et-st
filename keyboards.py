@@ -1,7 +1,28 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from config import TARIFFS
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
+
+def main_reply_menu():
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [
+                KeyboardButton(text="📝 Сделать доклад"),
+                KeyboardButton(text="📚 Сделать реферат"),
+            ],
+            [
+                KeyboardButton(text="📊 Сделать презентацию"),
+                KeyboardButton(text="🔗 Оформить источники"),
+            ],
+            [
+                KeyboardButton(text="💳 Тарифы"),
+                KeyboardButton(text="⚙️ Настройки"),
+            ],
+        ],
+        resize_keyboard=True,
+        input_field_placeholder="Выбери действие 👇"
+    )
 
 # ───────────────────────── MAIN MENU ─────────────────────────
 
