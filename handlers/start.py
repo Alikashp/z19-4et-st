@@ -5,12 +5,7 @@ from aiogram.fsm.context import FSMContext
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from handlers.common import get_or_create_user
-from states import (
-    ReportStates,
-    AbstractStates,
-    PresentationStates,
-    SourcesStates,
-)
+from states import ReportStates, AbstractStates, PresentationStates, SourcesStates
 from keyboards import (
     main_menu_kb,
     main_reply_menu,
@@ -34,11 +29,7 @@ async def cmd_start(message: Message, db: AsyncSession, state: FSMContext):
     await state.clear()
     await get_or_create_user(db, message)
 
-    await message.answer(
-        START_TEXT,
-        reply_markup=main_reply_menu()
-    )
-
+    await message.answer(START_TEXT, reply_markup=main_reply_menu())
     await message.answer(
         "Также можешь выбрать действие кнопками ниже 👇",
         reply_markup=main_menu_kb()
@@ -49,11 +40,7 @@ async def cmd_start(message: Message, db: AsyncSession, state: FSMContext):
 async def back_to_main(callback: CallbackQuery, state: FSMContext):
     await state.clear()
 
-    await callback.message.answer(
-        START_TEXT,
-        reply_markup=main_reply_menu()
-    )
-
+    await callback.message.answer(START_TEXT, reply_markup=main_reply_menu())
     await callback.message.answer(
         "Также можешь выбрать действие кнопками ниже 👇",
         reply_markup=main_menu_kb()
@@ -124,79 +111,6 @@ async def reply_menu_tariffs(message: Message, state: FSMContext):
 async def reply_menu_settings(message: Message, state: FSMContext):
     await state.clear()
 
-    await message.answer(
-        "⚙️ Настройки\n\nПока доступен язык по умолчанию: Русский.",
-        reply_markup=main_menu_kb()
-    )        "Также можешь выбрать действие кнопками ниже 👇",
-        reply_markup=main_menu_kb()
-    )
-
-
-@router.callback_query(lambda c: c.data == "menu:main")
-async def back_to_main(callback: CallbackQuery, state: FSMContext):
-    await state.clear()
-
-    await callback.message.answer(
-        START_TEXT,
-        reply_markup=main_reply_menu()
-    )
-
-    await callback.message.answer(
-        "Также можешь выбрать действие кнопками ниже 👇",
-        reply_markup=main_menu_kb()
-    )
-
-    await callback.answer()
-
-
-@router.message(F.text == "📝 Сделать доклад")
-async def reply_menu_report(message: Message, state: FSMContext):
-    await state.clear()
-    await message.answer(
-        "Выбери вариант создания",
-        reply_markup=input_type_kb("report")
-    )
-
-
-@router.message(F.text == "📚 Сделать реферат")
-async def reply_menu_abstract(message: Message, state: FSMContext):
-    await state.clear()
-    await message.answer(
-        "Выбери вариант создания",
-        reply_markup=input_type_kb("abstract")
-    )
-
-
-@router.message(F.text == "📊 Сделать презентацию")
-async def reply_menu_presentation(message: Message, state: FSMContext):
-    await state.clear()
-    await message.answer(
-        "Выбери вариант создания",
-        reply_markup=presentation_input_type_kb()
-    )
-
-
-@router.message(F.text == "🔗 Оформить источники")
-async def reply_menu_sources(message: Message, state: FSMContext):
-    await state.clear()
-    await message.answer(
-        "Выбери вариант создания",
-        reply_markup=sources_variant_kb()
-    )
-
-
-@router.message(F.text == "💳 Тарифы")
-async def reply_menu_tariffs(message: Message, state: FSMContext):
-    await state.clear()
-    await message.answer(
-        "Выберите тариф для генерации учебных материалов",
-        reply_markup=tariffs_kb()
-    )
-
-
-@router.message(F.text == "⚙️ Настройки")
-async def reply_menu_settings(message: Message, state: FSMContext):
-    await state.clear()
     await message.answer(
         "⚙️ Настройки\n\nПока доступен язык по умолчанию: Русский.",
         reply_markup=main_menu_kb()
