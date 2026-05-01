@@ -208,7 +208,6 @@ def generate_pdf(text: str, filename: str) -> str:
         bottomMargin=2 * cm,
     )
 
-    styles = getSampleStyleSheet()
     normal_style = ParagraphStyle(
         "Normal_Cyrillic",
         fontName=font_name,
