@@ -26,6 +26,34 @@ CROSSREF_ALLOWED_TYPES = {
     "journal-article", "book", "book-chapter", "monograph", "report", "standard", "proceedings-article"
 }
 
+TERM_TRANSLATIONS = {
+    "управление требованиями": ["requirements management", "requirements engineering"],
+    "требования стейкхолдеров": ["stakeholder requirements"],
+    "управление стейкхолдерами": ["stakeholder management"],
+    "ит-стартап": ["it startup", "software startup"],
+    "цифровой продукт": ["digital product", "software product"],
+    "гибкая разработка": ["agile software development"],
+    "приоритизация требований": ["requirements prioritization"],
+    "разработка продукта": ["product development"],
+}
+
+RELEVANCE_WEIGHTS = {
+    "requirements": 3,
+    "requirements engineering": 3,
+    "requirements management": 3,
+    "stakeholder": 3,
+    "stakeholders": 3,
+    "startup": 2,
+    "startups": 2,
+    "software": 2,
+    "it": 2,
+    "digital product": 2,
+    "agile": 1,
+    "lean": 1,
+    "prioritization": 1,
+    "product development": 1,
+}
+
 CURATED_REGISTRY = {
     "project management": [
         {
@@ -77,12 +105,18 @@ class SourceRecord:
     volume: str
     issue: str
     pages: str
+    abstract: str
     openalex_id: str
+    score: int = 0
     verified_by_crossref: bool = False
 
 
 class SourcesPipelineError(RuntimeError):
     pass
+
+
+def _norm(s: str) -> str:
+    return re.sub(r"[^\w\s]", "", re.sub(r"\s+", " ", (s or "").strip().lower()))
 
 
 def _normalize_doi(raw: str | None) -> str:
@@ -126,74 +160,184 @@ def _is_reliable_openalex_metadata(record: SourceRecord) -> bool:
     return bool(record.title and record.year and record.source)
 
 
-async def _search_openalex_by_types(topic: str, requested_count: int, openalex_types: list[str]) -> list[SourceRecord]:
+def build_search_queries(topic: str) -> list[str]:
+    t = topic.lower().strip()
+    queries = [t]
+
+    for ru, en_list in TERM_TRANSLATIONS.items():
+        if ru in t:
+            queries.extend(en_list)
+
+    if any(x in t for x in ["требован", "requirements"]):
+        queries += [
+            "requirements management software startups",
+            "requirements engineering software startups",
+            "agile requirements engineering startups",
+        ]
+    if any(x in t for x in ["стейкхолдер", "stakeholder"]):
+        queries += [
+            "stakeholder requirements software development",
+            "stakeholder management software development",
+        ]
+    if any(x in t for x in ["стартап", "startup"]):
+        queries += [
+            "lean startup requirements engineering",
+            "product development software startups stakeholders",
+        ]
+
+    queries += [
+        "requirements engineering software development",
+        "stakeholder management software projects",
+        "agile requirements engineering",
+    ]
+
+    uniq: list[str] = []
+    seen: set[str] = set()
+    for q in queries:
+        key = _norm(q)
+        if key and key not in seen:
+            uniq.append(q)
+            seen.add(key)
+    return uniq[:10]
+
+
+def _relevance_score(rec: SourceRecord, query_terms: list[str]) -> int:
+    text = _norm(" ".join([rec.title, rec.abstract, rec.source, rec.publisher]))
+    score = 0
+    for term, weight in RELEVANCE_WEIGHTS.items():
+        if term in text:
+            score += weight
+    for term in query_terms:
+        if term and term in text:
+            score += 1
+    return score
+
+
+async def _openalex_query(query: str, openalex_types: list[str], per_page: int) -> list[SourceRecord]:
     params = {
-        "search": topic,
+        "search": query,
         "filter": f"type:{'|'.join(openalex_types)}",
         "sort": "cited_by_count:desc",
-        "per-page": min(max(requested_count * 5, 30), 120),
+        "per-page": per_page,
     }
-    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
-        try:
-            response = await client.get(OPENALEX_URL, params=params)
-            response.raise_for_status()
-        except httpx.HTTPError as exc:
-            raise SourcesPipelineError(f"Ошибка OpenAlex API: {exc}") from exc
 
-    records: list[SourceRecord] = []
-    for item in response.json().get("results", []):
-        year = _parse_openalex_year(item)
-        if not year:
+    async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+        r = await client.get(OPENALEX_URL, params=params)
+        r.raise_for_status()
+
+    out: list[SourceRecord] = []
+    for item in r.json().get("results", []):
+        y = _parse_openalex_year(item)
+        if not y:
             continue
-        t = (item.get("type") or "").strip().lower()
-        mapped = "book" if t in {"book", "book-chapter", "monograph"} else ("standard" if t == "standard" else ("report" if t == "report" else "article"))
+
+        t = (item.get("type") or "").lower().strip()
+        mapped = (
+            "book" if t in {"book", "book-chapter", "monograph"}
+            else "standard" if t == "standard"
+            else "report" if t == "report"
+            else "article"
+        )
+
         biblio = item.get("biblio", {}) or {}
         title = (item.get("title") or "").strip()
-        records.append(SourceRecord(
-            title=title,
-            authors=[_normalize_person_name(a.get("author", {}).get("display_name", "")) for a in item.get("authorships", []) if a.get("author", {}).get("display_name")],
-            year=year,
-            source=(item.get("primary_location", {}).get("source", {}).get("display_name") or "").strip(),
-            publisher=(item.get("primary_location", {}).get("source", {}).get("host_organization_name") or "").strip(),
-            doi=_normalize_doi(item.get("doi")),
-            work_type=t,
-            source_type=mapped,
-            publication_date=item.get("publication_date") or "",
-            landing_page_url=(item.get("primary_location", {}).get("landing_page_url") or "").strip(),
-            standard_number=_extract_standard_number(title),
-            volume=str(biblio.get("volume") or ""),
-            issue=str(biblio.get("issue") or ""),
-            pages=(f"{biblio.get('first_page','')}-{biblio.get('last_page','')}".strip("-") if (biblio.get("first_page") or biblio.get("last_page")) else ""),
-            openalex_id=item.get("id") or "",
-        ))
-    return records
+
+        abstract_index = item.get("abstract_inverted_index") or {}
+        abstract = (
+            " ".join(sorted(abstract_index, key=lambda k: min(abstract_index[k]) if abstract_index[k] else 0))
+            if abstract_index else ""
+        )
+
+        out.append(
+            SourceRecord(
+                title=title,
+                authors=[
+                    _normalize_person_name((a.get("author", {}).get("display_name") or "").strip())
+                    for a in item.get("authorships", [])
+                    if a.get("author", {}).get("display_name")
+                ],
+                year=y,
+                source=(item.get("primary_location", {}).get("source", {}).get("display_name") or "").strip(),
+                publisher=(item.get("primary_location", {}).get("source", {}).get("host_organization_name") or "").strip(),
+                doi=_normalize_doi(item.get("doi")),
+                work_type=t,
+                source_type=mapped,
+                publication_date=item.get("publication_date") or "",
+                landing_page_url=(item.get("primary_location", {}).get("landing_page_url") or "").strip(),
+                standard_number=_extract_standard_number(title),
+                volume=str(biblio.get("volume") or ""),
+                issue=str(biblio.get("issue") or ""),
+                pages=(
+                    f"{biblio.get('first_page','')}-{biblio.get('last_page','')}".strip("-")
+                    if (biblio.get("first_page") or biblio.get("last_page"))
+                    else ""
+                ),
+                abstract=abstract,
+                openalex_id=item.get("id") or "",
+            )
+        )
+    return out
+
+
+def _dedupe_sources(records: list[SourceRecord]) -> list[SourceRecord]:
+    seen_doi: set[str] = set()
+    seen_titles: set[str] = set()
+    seen_standards: set[str] = set()
+    unique: list[SourceRecord] = []
+
+    for rec in records:
+        if rec.doi and rec.doi in seen_doi:
+            continue
+        t = _normalize_title(rec.title)
+        if t and t in seen_titles:
+            continue
+        s = _normalize_title(rec.standard_number)
+        if s and s in seen_standards:
+            continue
+
+        if rec.doi:
+            seen_doi.add(rec.doi)
+        if t:
+            seen_titles.add(t)
+        if s:
+            seen_standards.add(s)
+
+        unique.append(rec)
+
+    return unique
 
 
 def _inject_curated_sources(topic: str) -> list[SourceRecord]:
     out: list[SourceRecord] = []
-    for k, items in CURATED_REGISTRY.items():
-        if k in topic.lower():
+    tl = topic.lower()
+
+    for key, items in CURATED_REGISTRY.items():
+        if key in tl or any(k in tl for k in key.split()):
             for i in items:
                 if i["year"] < MIN_YEAR:
                     continue
-                out.append(SourceRecord(
-                    title=i["title"],
-                    authors=i["authors"],
-                    year=i["year"],
-                    source=i["source"],
-                    publisher=i["publisher"],
-                    doi="",
-                    work_type=i["source_type"],
-                    source_type=i["source_type"],
-                    publication_date=f"{i['year']}-01-01",
-                    landing_page_url="",
-                    standard_number=i["standard_number"],
-                    volume="",
-                    issue="",
-                    pages="",
-                    openalex_id="curated",
-                    verified_by_crossref=True,
-                ))
+                out.append(
+                    SourceRecord(
+                        title=i["title"],
+                        authors=i["authors"],
+                        year=i["year"],
+                        source=i["source"],
+                        publisher=i["publisher"],
+                        doi="",
+                        work_type=i["source_type"],
+                        source_type=i["source_type"],
+                        publication_date=f"{i['year']}-01-01",
+                        landing_page_url="",
+                        standard_number=i["standard_number"],
+                        volume="",
+                        issue="",
+                        pages="",
+                        abstract="",
+                        openalex_id="curated",
+                        score=5,
+                        verified_by_crossref=True,
+                    )
+                )
     return out
 
 
@@ -208,6 +352,7 @@ def _crossref_year(item: dict, fallback: int | None) -> int | None:
 async def _verify_single_with_crossref(client: httpx.AsyncClient, source: SourceRecord) -> tuple[bool, SourceRecord]:
     if source.openalex_id == "curated":
         return True, source
+
     try:
         resp = await (
             client.get(f"{CROSSREF_WORKS_URL}/{source.doi}")
@@ -220,6 +365,7 @@ async def _verify_single_with_crossref(client: httpx.AsyncClient, source: Source
 
     msg = resp.json().get("message", {})
     item = msg if source.doi else (msg.get("items", [{}])[0] if isinstance(msg, dict) else {})
+
     ctype = (item.get("type") or "").lower()
     if ctype and ctype not in CROSSREF_ALLOWED_TYPES:
         return False, source
@@ -236,47 +382,39 @@ async def _verify_single_with_crossref(client: httpx.AsyncClient, source: Source
     source.issue = str(item.get("issue") or source.issue or "")
     source.pages = str(item.get("page") or source.pages or "")
     source.publisher = item.get("publisher") or source.publisher
-    source.source = (item.get("container-title", [""])[0] if isinstance(item.get("container-title"), list) else item.get("container-title")) or source.source
-    source.authors = [_normalize_person_name(f"{a.get('family','')} {a.get('given','')}") for a in item.get("author", [])] or source.authors
+    source.source = (
+        item.get("container-title", [""])[0]
+        if isinstance(item.get("container-title"), list)
+        else item.get("container-title")
+    ) or source.source
+    source.authors = [
+        _normalize_person_name(f"{a.get('family','')} {a.get('given','')}".strip())
+        for a in item.get("author", [])
+    ] or source.authors
     source.title = cr_title.strip() or source.title
     source.verified_by_crossref = True
+
     return True, source
 
 
 async def verify_sources_with_crossref(candidates: list[SourceRecord]) -> list[SourceRecord]:
     async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
-        checked = await asyncio.gather(*[_verify_single_with_crossref(client, s) for s in candidates], return_exceptions=True)
+        checked = await asyncio.gather(
+            *[_verify_single_with_crossref(client, s) for s in candidates],
+            return_exceptions=True,
+        )
+
     verified: list[SourceRecord] = []
     for source, result in zip(candidates, checked):
         if isinstance(result, Exception):
             ok, enriched = False, source
         else:
             ok, enriched = result
+
         if enriched.year and enriched.year >= MIN_YEAR and (ok or _is_reliable_openalex_metadata(enriched)):
             verified.append(enriched)
+
     return _dedupe_sources(verified)
-
-
-def _dedupe_sources(records: list[SourceRecord]) -> list[SourceRecord]:
-    seen_doi, seen_title, seen_std = set(), set(), set()
-    out = []
-    for r in records:
-        if r.doi and r.doi in seen_doi:
-            continue
-        t = _normalize_title(r.title)
-        if t and t in seen_title:
-            continue
-        s = _normalize_title(r.standard_number)
-        if s and s in seen_std:
-            continue
-        if r.doi:
-            seen_doi.add(r.doi)
-        if t:
-            seen_title.add(t)
-        if s:
-            seen_std.add(s)
-        out.append(r)
-    return out
 
 
 def _select_mixed_sources(sources: list[SourceRecord], count: int) -> list[SourceRecord]:
@@ -294,9 +432,11 @@ def _select_mixed_sources(sources: list[SourceRecord], count: int) -> list[Sourc
     selected: list[SourceRecord] = []
     for kind in ["article", "book", "standard", "report"]:
         selected.extend(buckets.get(kind, [])[:quotas[kind]])
+
     if len(selected) < count:
         leftovers = [s for s in sources if s not in selected]
         selected.extend(leftovers[: max(0, count - len(selected))])
+
     return selected[:count]
 
 
@@ -309,6 +449,7 @@ def _build_format_prompt(verified_sources: list[SourceRecord], fmt: str) -> str:
             f"year={s.year}; source={s.source or 'N/A'}; publisher={s.publisher or 'N/A'}; volume={s.volume or 'N/A'}; "
             f"issue={s.issue or 'N/A'}; pages={s.pages or 'N/A'}; {doi}; standard_number={s.standard_number or 'N/A'}"
         )
+
     return (
         f"Оформи ТОЛЬКО verified_sources в формате {fmt}.\n"
         "GPT только оформляет, не ищет и не добавляет источники из памяти.\n"
@@ -323,16 +464,39 @@ def _build_format_prompt(verified_sources: list[SourceRecord], fmt: str) -> str:
 
 async def generate_sources_by_topic(topic: str, count: int, fmt: str, mode: str = "mixed") -> str:
     mode = mode if mode in OPENALEX_TYPES_BY_MODE else "mixed"
-    candidates = await _search_openalex_by_types(topic, count, OPENALEX_TYPES_BY_MODE[mode])
+    queries = build_search_queries(topic)
+    openalex_types = OPENALEX_TYPES_BY_MODE[mode]
+
+    candidates: list[SourceRecord] = []
+    for q in queries:
+        try:
+            candidates.extend(await _openalex_query(q, openalex_types, per_page=15))
+        except httpx.HTTPError:
+            continue
+
     if mode in {"mixed", "standards"}:
         candidates.extend(_inject_curated_sources(topic))
-    verified = await verify_sources_with_crossref(_dedupe_sources(candidates))
-    verified = _select_mixed_sources(verified, count) if mode == "mixed" else verified[:count]
 
-    if not verified:
-        return "Надежные источники по теме не найдены после проверки в Crossref/OpenAlex."
+    candidates = _dedupe_sources(candidates)
+    if not candidates:
+        return "Надежные источники по теме не найдены после расширенного поиска OpenAlex/Crossref."
 
-    formatted = await generate_text(_build_format_prompt(verified, fmt), max_tokens=2000)
-    if len(verified) < count:
-        return f"⚠️ Надежных источников найдено меньше запрошенного ({len(verified)} из {count}).\n\n{formatted}"
+    query_terms = [_norm(q) for q in queries]
+    for c in candidates:
+        c.score = _relevance_score(c, query_terms)
+
+    filtered = [x for x in candidates if x.score >= 4]
+    if len(filtered) < max(3, count):
+        filtered = [x for x in candidates if x.score >= 2]
+
+    verified = await verify_sources_with_crossref(filtered)
+    verified = sorted(verified, key=lambda x: x.score, reverse=True)
+
+    selected = _select_mixed_sources(verified, count) if mode == "mixed" else verified[:count]
+    if not selected:
+        return "Надежные источники по теме не найдены после расширенного поиска и верификации."
+
+    formatted = await generate_text(_build_format_prompt(selected, fmt), max_tokens=2000)
+    if len(selected) < count:
+        return f"⚠️ Надежных источников найдено меньше запрошенного ({len(selected)} из {count}).\n\n{formatted}"
     return formatted
