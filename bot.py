@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from config import TG_BOT_API_KEY
 from database import init_db, AsyncSessionLocal
 from handlers import start, report, abstract, presentation, sources, tariffs
+from aiogram.types import BotCommand
 
 logging.basicConfig(
     level=logging.INFO,
@@ -46,6 +47,16 @@ async def main():
     dp.include_router(sources.router)
     dp.include_router(tariffs.router)
 
+    await bot.set_my_commands([
+    BotCommand(command="start", description="Главное меню"),
+    BotCommand(command="report", description="Сделать доклад"),
+    BotCommand(command="abstract", description="Сделать реферат"),
+    BotCommand(command="presentation", description="Сделать презентацию"),
+    BotCommand(command="sources", description="Оформить источники"),
+    BotCommand(command="tariffs", description="Тарифы"),
+    BotCommand(command="settings", description="Настройки"),
+])
+    
     logger.info("Bot starting...")
 
     try:
