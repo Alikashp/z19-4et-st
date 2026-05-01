@@ -142,6 +142,8 @@ def _extract_standard_number(title: str) -> str:
 
 
 def _parse_openalex_year(item: dict) -> int | None:
+    if not isinstance(item, dict):
+        return None
     year = item.get("publication_year")
     if year:
         return year
@@ -225,8 +227,14 @@ async def _openalex_query(query: str, openalex_types: list[str], per_page: int) 
         r = await client.get(OPENALEX_URL, params=params)
         r.raise_for_status()
 
+    payload = r.json() if isinstance(r.json(), dict) else {}
+    results = payload.get("results", []) if isinstance(payload.get("results"), list) else []
+
     out: list[SourceRecord] = []
-    for item in r.json().get("results", []):
+    for item in results:
+        if not isinstance(item, dict):
+            continue
+
         y = _parse_openalex_year(item)
         if not y:
             continue
@@ -241,19 +249,24 @@ async def _openalex_query(query: str, openalex_types: list[str], per_page: int) 
 
         biblio = item.get("biblio", {}) or {}
         title = (item.get("title") or "").strip()
+
         abstract_index = item.get("abstract_inverted_index") or {}
         abstract = (
             " ".join(sorted(abstract_index, key=lambda k: min(abstract_index[k]) if abstract_index[k] else 0))
             if abstract_index else ""
         )
 
+        authorships = item.get("authorships", [])
+        if not isinstance(authorships, list):
+            authorships = []
+
         out.append(
             SourceRecord(
                 title=title,
                 authors=[
                     _normalize_person_name((a.get("author", {}).get("display_name") or "").strip())
-                    for a in item.get("authorships", [])
-                    if a.get("author", {}).get("display_name")
+                    for a in authorships
+                    if isinstance(a, dict) and a.get("author", {}).get("display_name")
                 ],
                 year=y,
                 source=(item.get("primary_location", {}).get("source", {}).get("display_name") or "").strip(),
@@ -275,6 +288,7 @@ async def _openalex_query(query: str, openalex_types: list[str], per_page: int) 
                 openalex_id=item.get("id") or "",
             )
         )
+
     return out
 
 
@@ -287,9 +301,11 @@ def _dedupe_sources(records: list[SourceRecord]) -> list[SourceRecord]:
     for rec in records:
         if rec.doi and rec.doi in seen_doi:
             continue
+
         t = _normalize_title(rec.title)
         if t and t in seen_titles:
             continue
+
         s = _normalize_title(rec.standard_number)
         if s and s in seen_standards:
             continue
@@ -337,6 +353,7 @@ def _inject_curated_sources(topic: str) -> list[SourceRecord]:
                         verified_by_crossref=True,
                     )
                 )
+
     return out
 
 
