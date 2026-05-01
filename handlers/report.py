@@ -213,9 +213,9 @@ async def report_followup_qa(callback: CallbackQuery, state: FSMContext, db: Asy
     data = await state.get_data()
     material_text = data.get("generated_text") or _load_last_material(callback.from_user.id)
     if not material_text:
-    await callback.message.answer("❌ Не найден материал для генерации речи. Начни заново.")
-    await callback.answer()
-    return
+        await callback.message.answer("❌ Не найден материал для генерации речи. Начни заново.")
+        await callback.answer()
+        return
     await _generate_qa(callback, db, material_text)
     await callback.answer()
 
