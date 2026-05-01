@@ -18,21 +18,27 @@ def _ensure_output_dir():
 
 
 def _register_fonts():
-    """Регистрирует шрифты с поддержкой кириллицы."""
-    # Пробуем найти системный шрифт с кириллицей
+    """Регистрирует шрифт с поддержкой кириллицы."""
     font_paths = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed.ttf",
+        "/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-        "/System/Library/Fonts/Helvetica.ttc",
     ]
+
     for path in font_paths:
         if os.path.exists(path):
             try:
                 pdfmetrics.registerFont(TTFont("CyrillicFont", path))
                 return "CyrillicFont"
-            except Exception:
+            except Exception as e:
+                print(f"Font register error for {path}: {e}")
                 continue
-    return "Helvetica"  # fallback без кириллицы
+
+    raise RuntimeError(
+        "Не найден шрифт с поддержкой кириллицы. "
+        "Установи fonts-dejavu-core на сервере."
+    )
 
 
 def generate_pdf(text: str, filename: str) -> str:
