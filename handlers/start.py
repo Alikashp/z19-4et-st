@@ -9,8 +9,9 @@ from keyboards import (
     main_menu_kb,
     main_reply_menu,
     input_type_kb,
-    sources_mode_menu,
-    tariffs_menu,
+    presentation_input_type_kb,
+    sources_variant_kb,
+    tariffs_kb,
 )
 
 router = Router()
@@ -78,7 +79,7 @@ async def reply_menu_presentation(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(
         "Выбери вариант создания",
-        reply_markup=input_type_kb("pres")
+        reply_markup=presentation_input_type_kb()
     )
 
 
@@ -87,7 +88,7 @@ async def reply_menu_sources(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(
         "Выбери вариант создания",
-        reply_markup=sources_mode_menu()
+        reply_markup=sources_variant_kb()
     )
 
 
@@ -96,7 +97,7 @@ async def reply_menu_tariffs(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(
         "Выберите тариф для генерации учебных материалов",
-        reply_markup=tariffs_menu()
+        reply_markup=tariffs_kb()
     )
 
 
