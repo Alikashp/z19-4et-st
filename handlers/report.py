@@ -78,6 +78,13 @@ async def report_got_topic(message: Message, state: FSMContext):
     await state.set_state(ReportStates.choosing_level)
     await message.answer("🎓 Выбери уровень подготовки:", reply_markup=level_kb(MATERIAL))
 
+@router.message(ReportStates.waiting_for_topic, F.document)
+async def report_document_sent_in_topic_mode(message: Message):
+    await message.answer(
+        "📎 Ты отправила документ, но сейчас бот ждёт короткую тему текстом.\n\n"
+        "Например: «Управление требованиями стейкхолдеров в ИТ-стартапе».\n\n"
+        "Для работы с файлом выбери режим: 📝 Сделать доклад → 📎 По документу."
+    )
 
 @router.message(ReportStates.waiting_for_text)
 async def report_got_text(message: Message, state: FSMContext):
@@ -85,6 +92,14 @@ async def report_got_text(message: Message, state: FSMContext):
     await state.set_state(ReportStates.choosing_level)
     await message.answer("🎓 Выбери уровень подготовки:", reply_markup=level_kb(MATERIAL))
 
+@router.message(ReportStates.waiting_for_text, F.document)
+async def report_document_sent_in_text_mode(message: Message):
+    await message.answer(
+        "📎 Ты отправила документ, но выбрала режим «По тексту».\n\n"
+        "Если хочешь сделать доклад по файлу, вернись в главное меню и выбери:\n"
+        "📝 Сделать доклад → 📎 По документу.\n\n"
+        "Или просто скопируй текст из документа и отправь его сообщением."
+    )
 
 @router.message(ReportStates.waiting_for_document, F.document)
 async def report_got_document(message: Message, state: FSMContext, bot: Bot):
