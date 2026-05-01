@@ -96,8 +96,8 @@ async def report_input_type(callback: CallbackQuery, state: FSMContext):
 @router.message(ReportStates.waiting_for_topic, F.document)
 async def report_document_sent_in_topic_mode(message: Message):
     await message.answer(
-        "📎 Ты отправила документ, но сейчас бот ждёт короткую тему текстом.\n\n"
-        "Например: «Управление требованиями стейкхолдеров в ИТ-стартапе».\n\n"
+        "📎 Вы отправили документ, но сейчас бот ждёт короткую тему текстом.\n\n"
+        "Например: «Экономика предприятия».\n\n"
         "Для работы с файлом выбери режим:\n"
         "📝 Сделать доклад → 📎 По документу."
     )
@@ -121,10 +121,10 @@ async def report_got_topic(message: Message, state: FSMContext):
 @router.message(ReportStates.waiting_for_text, F.document)
 async def report_document_sent_in_text_mode(message: Message):
     await message.answer(
-        "📎 Ты отправила документ, но выбрала режим «По тексту».\n\n"
-        "Если хочешь сделать доклад по файлу, вернись в главное меню и выбери:\n"
+        "📎 Вы отправили документ, но выбрала режим «По тексту».\n\n"
+        "Если хотите сделать доклад по файлу, вернитесь в главное меню и выберите:\n"
         "📝 Сделать доклад → 📎 По документу.\n\n"
-        "Или просто скопируй текст из документа и отправь его сообщением."
+        "Или просто скопируйте текст из документа и отправьте его сообщением."
     )
 
 
@@ -146,10 +146,10 @@ async def report_got_text(message: Message, state: FSMContext):
 @router.message(ReportStates.waiting_for_document, F.text)
 async def report_text_sent_in_document_mode(message: Message):
     await message.answer(
-        "📄 Ты отправила текст, но выбрала режим «По документу».\n\n"
-        "Если хочешь сделать доклад по тексту, вернись в главное меню и выбери:\n"
+        "📄 Вы отправили текст, но выбрали режим «По документу».\n\n"
+        "Если хотите сделать доклад по тексту, вернитесь в главное меню и выберите:\n"
         "📝 Сделать доклад → 📄 По тексту.\n\n"
-        "Или отправь файл в формате .txt или .docx."
+        "Или отправьте файл в формате .txt или .docx."
     )
 
 
