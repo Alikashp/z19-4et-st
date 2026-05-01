@@ -11,7 +11,7 @@ async def generate_text(prompt: str, max_tokens: int = 4000) -> str:
         # Заглушка для разработки без ключа
         return _stub_response(prompt)
 
-    url = "https://api.openai.com/v1/chat/completions"
+    url = "https://api.proxyapi.ru/openai/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {OPENAI_API_KEY}",
         "Content-Type": "application/json",
