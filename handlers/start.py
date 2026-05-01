@@ -8,7 +8,7 @@ from handlers.common import get_or_create_user
 from keyboards import (
     main_menu_kb,
     main_reply_menu,
-    input_type_menu,
+    input_type_kb,
     sources_mode_menu,
     tariffs_menu,
 )
@@ -60,7 +60,7 @@ async def reply_menu_report(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(
         "Выбери вариант создания",
-        reply_markup=input_type_menu("report")
+        reply_markup=input_type_kb("report")
     )
 
 
@@ -69,7 +69,7 @@ async def reply_menu_abstract(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(
         "Выбери вариант создания",
-        reply_markup=input_type_menu("abstract")
+        reply_markup=input_type_kb("abstract")
     )
 
 
@@ -78,7 +78,7 @@ async def reply_menu_presentation(message: Message, state: FSMContext):
     await state.clear()
     await message.answer(
         "Выбери вариант создания",
-        reply_markup=input_type_menu("pres")
+        reply_markup=input_type_kb("pres")
     )
 
 
