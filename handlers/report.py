@@ -105,9 +105,34 @@ async def report_document_sent_in_topic_mode(message: Message):
 
 @router.message(ReportStates.waiting_for_topic, F.text)
 async def report_got_topic(message: Message, state: FSMContext):
+    topic = (message.text or "").strip()
+
+    if len(topic) > 200:
+        await message.answer(
+            "Похоже, ты вставила не тему, а большой текст.\n\n"
+            "Для темы нужно коротко: до 200 символов.\n"
+            "Например: «Управление требованиями стейкхолдеров в ИТ-стартапе».\n\n"
+            "Если хочешь сделать доклад по большому тексту, вернись назад и выбери режим «По тексту»."
+        )
+        return
+
+    if len(topic) < 5:
+        await message.answer(
+            "Тема слишком короткая. Напиши чуть подробнее.\n\n"
+            "Например: «Управление требованиями стейкхолдеров в ИТ-стартапе»."
+        )
+        return
+
     await state.update_data(
-        topic=message.text,
-        material_text=message.text,
+        topic=topic,
+        material_text=topic,
+    )
+
+    await state.set_state(ReportStates.choosing_level)
+
+    await message.answer(
+        "🎓 Выбери уровень подготовки:",
+        reply_markup=level_kb(MATERIAL),
     )
 
     await state.set_state(ReportStates.choosing_level)
