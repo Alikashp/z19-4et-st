@@ -21,13 +21,43 @@ OPENALEX_TYPES_BY_MODE = {
     "reports": ["report"],
     "mixed": ["article", "book", "book-chapter", "monograph", "report", "standard"],
 }
-CROSSREF_ALLOWED_TYPES = {"journal-article", "book", "book-chapter", "monograph", "report", "standard", "proceedings-article"}
+
+CROSSREF_ALLOWED_TYPES = {
+    "journal-article", "book", "book-chapter", "monograph", "report", "standard", "proceedings-article"
+}
 
 CURATED_REGISTRY = {
     "project management": [
-        {"title": "A Guide to the Project Management Body of Knowledge (PMBOK® Guide)", "authors": ["Project Management Institute"], "year": 2021, "publisher": "Project Management Institute", "source": "Project Management Institute", "source_type": "standard", "standard_number": "PMBOK 7"},
-        {"title": "ISO 21502:2020 Project, programme and portfolio management — Guidance on project management", "authors": ["ISO"], "year": 2020, "publisher": "ISO", "source": "ISO", "source_type": "standard", "standard_number": "ISO 21502:2020"},
-    ]
+        {
+            "title": "A Guide to the Project Management Body of Knowledge (PMBOK® Guide)",
+            "authors": ["Project Management Institute"],
+            "year": 2021,
+            "publisher": "Project Management Institute",
+            "source": "Project Management Institute",
+            "source_type": "standard",
+            "standard_number": "PMBOK 7",
+        },
+        {
+            "title": "ISO 21502:2020 Project, programme and portfolio management — Guidance on project management",
+            "authors": ["ISO"],
+            "year": 2020,
+            "publisher": "ISO",
+            "source": "ISO",
+            "source_type": "standard",
+            "standard_number": "ISO 21502:2020",
+        },
+    ],
+    "information security": [
+        {
+            "title": "ISO/IEC 27001:2022 Information security, cybersecurity and privacy protection — Information security management systems — Requirements",
+            "authors": ["ISO/IEC"],
+            "year": 2022,
+            "publisher": "ISO",
+            "source": "ISO/IEC",
+            "source_type": "standard",
+            "standard_number": "ISO/IEC 27001:2022",
+        }
+    ],
 }
 
 
@@ -147,7 +177,22 @@ def _inject_curated_sources(topic: str) -> list[SourceRecord]:
                 if i["year"] < MIN_YEAR:
                     continue
                 out.append(SourceRecord(
-                    title=i["title"], authors=i["authors"], year=i["year"], source=i["source"], publisher=i["publisher"], doi="", work_type=i["source_type"], source_type=i["source_type"], publication_date=f"{i['year']}-01-01", landing_page_url="", standard_number=i["standard_number"], volume="", issue="", pages="", openalex_id="curated", verified_by_crossref=True
+                    title=i["title"],
+                    authors=i["authors"],
+                    year=i["year"],
+                    source=i["source"],
+                    publisher=i["publisher"],
+                    doi="",
+                    work_type=i["source_type"],
+                    source_type=i["source_type"],
+                    publication_date=f"{i['year']}-01-01",
+                    landing_page_url="",
+                    standard_number=i["standard_number"],
+                    volume="",
+                    issue="",
+                    pages="",
+                    openalex_id="curated",
+                    verified_by_crossref=True,
                 ))
     return out
 
@@ -164,7 +209,11 @@ async def _verify_single_with_crossref(client: httpx.AsyncClient, source: Source
     if source.openalex_id == "curated":
         return True, source
     try:
-        resp = await (client.get(f"{CROSSREF_WORKS_URL}/{source.doi}") if source.doi else client.get(CROSSREF_WORKS_URL, params={"query.title": source.title, "rows": 1}))
+        resp = await (
+            client.get(f"{CROSSREF_WORKS_URL}/{source.doi}")
+            if source.doi
+            else client.get(CROSSREF_WORKS_URL, params={"query.title": source.title, "rows": 1})
+        )
         resp.raise_for_status()
     except httpx.HTTPError:
         return False, source
@@ -231,21 +280,35 @@ def _dedupe_sources(records: list[SourceRecord]) -> list[SourceRecord]:
 
 
 def _select_mixed_sources(sources: list[SourceRecord], count: int) -> list[SourceRecord]:
-    quotas = {"article": round(count * 0.5), "book": round(count * 0.25), "standard": round(count * 0.15), "report": round(count * 0.1)}
-    picked: list[SourceRecord] = []
-    for typ in ["article", "book", "standard", "report"]:
-        bucket = [s for s in sources if s.source_type == typ]
-        picked.extend(bucket[:max(1, quotas[typ])])
-    if len(picked) < count:
-        picked.extend([s for s in sources if s not in picked][:count - len(picked)])
-    return picked[:count]
+    buckets: dict[str, list[SourceRecord]] = {"article": [], "book": [], "standard": [], "report": []}
+    for s in sources:
+        buckets.setdefault(s.source_type, []).append(s)
+
+    quotas = {
+        "article": max(1, round(count * 0.5)),
+        "book": max(1, round(count * 0.25)),
+        "standard": max(1, round(count * 0.15)),
+        "report": max(1, round(count * 0.1)),
+    }
+
+    selected: list[SourceRecord] = []
+    for kind in ["article", "book", "standard", "report"]:
+        selected.extend(buckets.get(kind, [])[:quotas[kind]])
+    if len(selected) < count:
+        leftovers = [s for s in sources if s not in selected]
+        selected.extend(leftovers[: max(0, count - len(selected))])
+    return selected[:count]
 
 
 def _build_format_prompt(verified_sources: list[SourceRecord], fmt: str) -> str:
     lines = []
     for i, s in enumerate(verified_sources, start=1):
         doi = f"DOI: {s.doi}" if s.doi else "DOI: N/A"
-        lines.append(f"{i}) source_type={s.source_type}; title={s.title}; authors={', '.join(s.authors) if s.authors else 'N/A'}; year={s.year}; source={s.source or 'N/A'}; publisher={s.publisher or 'N/A'}; volume={s.volume or 'N/A'}; issue={s.issue or 'N/A'}; pages={s.pages or 'N/A'}; {doi}; standard_number={s.standard_number or 'N/A'}")
+        lines.append(
+            f"{i}) source_type={s.source_type}; title={s.title}; authors={', '.join(s.authors) if s.authors else 'N/A'}; "
+            f"year={s.year}; source={s.source or 'N/A'}; publisher={s.publisher or 'N/A'}; volume={s.volume or 'N/A'}; "
+            f"issue={s.issue or 'N/A'}; pages={s.pages or 'N/A'}; {doi}; standard_number={s.standard_number or 'N/A'}"
+        )
     return (
         f"Оформи ТОЛЬКО verified_sources в формате {fmt}.\n"
         "GPT только оформляет, не ищет и не добавляет источники из памяти.\n"
@@ -265,7 +328,11 @@ async def generate_sources_by_topic(topic: str, count: int, fmt: str, mode: str 
         candidates.extend(_inject_curated_sources(topic))
     verified = await verify_sources_with_crossref(_dedupe_sources(candidates))
     verified = _select_mixed_sources(verified, count) if mode == "mixed" else verified[:count]
+
     if not verified:
         return "Надежные источники по теме не найдены после проверки в Crossref/OpenAlex."
+
     formatted = await generate_text(_build_format_prompt(verified, fmt), max_tokens=2000)
-    return (f"⚠️ Надежных источников найдено меньше запрошенного ({len(verified)} из {count}).\n\n{formatted}" if len(verified) < count else formatted)
+    if len(verified) < count:
+        return f"⚠️ Надежных источников найдено меньше запрошенного ({len(verified)} из {count}).\n\n{formatted}"
+    return formatted
