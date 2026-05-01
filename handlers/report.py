@@ -18,6 +18,23 @@ from handlers.common import check_balance, deduct_generation
 router = Router()
 MATERIAL = "report"
 
+LAST_TEXT_DIR = "generated_files"
+
+
+def _save_last_material(user_id: int, text: str):
+    os.makedirs(LAST_TEXT_DIR, exist_ok=True)
+    path = os.path.join(LAST_TEXT_DIR, f"last_report_{user_id}.txt")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(text)
+
+
+def _load_last_material(user_id: int) -> str:
+    path = os.path.join(LAST_TEXT_DIR, f"last_report_{user_id}.txt")
+    if not os.path.exists(path):
+        return ""
+    with open(path, "r", encoding="utf-8") as f:
+        return f.read()
+
 
 # ─── Entry ───────────────────────────────────────────────────
 
@@ -143,6 +160,7 @@ async def report_generate(callback: CallbackQuery, state: FSMContext, db: AsyncS
 
         # Сохраняем текст для последующих операций (речь, Q&A)
         await state.update_data(generated_text=full_text)
+        _save_last_material(callback.from_user.id, full_text)
 
         # PDF
         safe_topic = (data.get("topic") or "doklad")[:30].replace(" ", "_").replace("/", "_")
@@ -178,9 +196,9 @@ async def report_followup_speech(callback: CallbackQuery, state: FSMContext, db:
         await callback.answer()
         return
     data = await state.get_data()
-    material_text = data.get("generated_text", "")
+    material_text = data.get("generated_text") or _load_last_material(callback.from_user.id)
     if not material_text:
-        await callback.message.answer("❌ Не найден материал для генерации речи. Начни заново.")
+        await callback.message.answer("❌ Не найден материал. Начни заново.")
         await callback.answer()
         return
     await _generate_speech(callback, db, material_text)
@@ -193,11 +211,11 @@ async def report_followup_qa(callback: CallbackQuery, state: FSMContext, db: Asy
         await callback.answer()
         return
     data = await state.get_data()
-    material_text = data.get("generated_text", "")
+    material_text = data.get("generated_text") or _load_last_material(callback.from_user.id)
     if not material_text:
-        await callback.message.answer("❌ Не найден материал. Начни заново.")
-        await callback.answer()
-        return
+    await callback.message.answer("❌ Не найден материал для генерации речи. Начни заново.")
+    await callback.answer()
+    return
     await _generate_qa(callback, db, material_text)
     await callback.answer()
 
