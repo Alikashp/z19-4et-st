@@ -241,7 +241,6 @@ async def _openalex_query(query: str, openalex_types: list[str], per_page: int) 
 
         biblio = item.get("biblio", {}) or {}
         title = (item.get("title") or "").strip()
-
         abstract_index = item.get("abstract_inverted_index") or {}
         abstract = (
             " ".join(sorted(abstract_index, key=lambda k: min(abstract_index[k]) if abstract_index[k] else 0))
@@ -363,8 +362,16 @@ async def _verify_single_with_crossref(client: httpx.AsyncClient, source: Source
     except httpx.HTTPError:
         return False, source
 
-    msg = resp.json().get("message", {})
-    item = msg if source.doi else (msg.get("items", [{}])[0] if isinstance(msg, dict) else {})
+    payload = resp.json() if isinstance(resp.json(), dict) else {}
+    msg = payload.get("message", {}) if isinstance(payload, dict) else {}
+    if not isinstance(msg, dict):
+        msg = {}
+
+    if source.doi:
+        item = msg
+    else:
+        items = msg.get("items", []) if isinstance(msg.get("items"), list) else []
+        item = items[0] if items and isinstance(items[0], dict) else {}
 
     ctype = (item.get("type") or "").lower()
     if ctype and ctype not in CROSSREF_ALLOWED_TYPES:
@@ -390,6 +397,7 @@ async def _verify_single_with_crossref(client: httpx.AsyncClient, source: Source
     source.authors = [
         _normalize_person_name(f"{a.get('family','')} {a.get('given','')}".strip())
         for a in item.get("author", [])
+        if isinstance(a, dict)
     ] or source.authors
     source.title = cr_title.strip() or source.title
     source.verified_by_crossref = True
