@@ -5,6 +5,10 @@ load_dotenv()
 
 TG_BOT_API_KEY = os.getenv("TG_BOT_API_KEY", "")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+OPENAI_API_BASE_URL = os.getenv(
+    "OPENAI_API_BASE_URL",
+    "https://api.proxyapi.ru/openai/v1/chat/completions"
+)
 LLM_MODEL = os.getenv("LLM_MODEL", "gpt-4o-mini")
 FIBONACCI_API_KEY = os.getenv("FIBONACCI_API_KEY", "")
 FIBONACCI_API_URL = os.getenv("FIBONACCI_API_URL", "https://api.fibonacci.ai/v1")
