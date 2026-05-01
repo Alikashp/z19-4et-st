@@ -111,10 +111,6 @@ class SourceRecord:
     verified_by_crossref: bool = False
 
 
-class SourcesPipelineError(RuntimeError):
-    pass
-
-
 def _norm(s: str) -> str:
     return re.sub(r"[^\w\s]", "", re.sub(r"\s+", " ", (s or "").strip().lower()))
 
@@ -137,19 +133,19 @@ def _normalize_person_name(name: str) -> str:
 
 
 def _extract_standard_number(title: str) -> str:
-    match = re.search(r"\b(?:ISO|IEC|ISO/IEC|IEEE)\s?[\w\-/.:]+", title or "", re.IGNORECASE)
-    return match.group(0).strip() if match else ""
+    m = re.search(r"\b(?:ISO|IEC|ISO/IEC|IEEE)\s?[\w\-/.:]+", title or "", re.IGNORECASE)
+    return m.group(0).strip() if m else ""
 
 
 def _parse_openalex_year(item: dict) -> int | None:
     if not isinstance(item, dict):
         return None
-    year = item.get("publication_year")
-    if year:
-        return year
-    pub_date = item.get("publication_date") or ""
+    y = item.get("publication_year")
+    if y:
+        return y
+    d = item.get("publication_date") or ""
     try:
-        return date.fromisoformat(pub_date).year if pub_date else None
+        return date.fromisoformat(d).year if d else None
     except ValueError:
         return None
 
@@ -196,10 +192,10 @@ def build_search_queries(topic: str) -> list[str]:
     uniq: list[str] = []
     seen: set[str] = set()
     for q in queries:
-        key = _norm(q)
-        if key and key not in seen:
+        k = _norm(q)
+        if k and k not in seen:
             uniq.append(q)
-            seen.add(key)
+            seen.add(k)
     return uniq[:10]
 
 
@@ -222,7 +218,6 @@ async def _openalex_query(query: str, openalex_types: list[str], per_page: int) 
         "sort": "cited_by_count:desc",
         "per-page": per_page,
     }
-
     async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
         r = await client.get(OPENALEX_URL, params=params)
         r.raise_for_status()
@@ -247,18 +242,26 @@ async def _openalex_query(query: str, openalex_types: list[str], per_page: int) 
             else "article"
         )
 
-        biblio = item.get("biblio", {}) or {}
+        biblio = item.get("biblio", {}) if isinstance(item.get("biblio"), dict) else {}
         title = (item.get("title") or "").strip()
 
-        abstract_index = item.get("abstract_inverted_index") or {}
+        abstract_index = item.get("abstract_inverted_index") if isinstance(item.get("abstract_inverted_index"), dict) else {}
         abstract = (
-            " ".join(sorted(abstract_index, key=lambda k: min(abstract_index[k]) if abstract_index[k] else 0))
+            " ".join(
+                sorted(
+                    abstract_index,
+                    key=lambda k: min(abstract_index[k]) if isinstance(abstract_index[k], list) and abstract_index[k] else 0
+                )
+            )
             if abstract_index else ""
         )
 
         authorships = item.get("authorships", [])
         if not isinstance(authorships, list):
             authorships = []
+
+        primary_location = item.get("primary_location") if isinstance(item.get("primary_location"), dict) else {}
+        source_obj = primary_location.get("source") if isinstance(primary_location.get("source"), dict) else {}
 
         out.append(
             SourceRecord(
@@ -269,13 +272,13 @@ async def _openalex_query(query: str, openalex_types: list[str], per_page: int) 
                     if isinstance(a, dict) and a.get("author", {}).get("display_name")
                 ],
                 year=y,
-                source=(item.get("primary_location", {}).get("source", {}).get("display_name") or "").strip(),
-                publisher=(item.get("primary_location", {}).get("source", {}).get("host_organization_name") or "").strip(),
+                source=(source_obj.get("display_name") or "").strip(),
+                publisher=(source_obj.get("host_organization_name") or "").strip(),
                 doi=_normalize_doi(item.get("doi")),
                 work_type=t,
                 source_type=mapped,
                 publication_date=item.get("publication_date") or "",
-                landing_page_url=(item.get("primary_location", {}).get("landing_page_url") or "").strip(),
+                landing_page_url=(primary_location.get("landing_page_url") or "").strip(),
                 standard_number=_extract_standard_number(title),
                 volume=str(biblio.get("volume") or ""),
                 issue=str(biblio.get("issue") or ""),
@@ -301,11 +304,9 @@ def _dedupe_sources(records: list[SourceRecord]) -> list[SourceRecord]:
     for rec in records:
         if rec.doi and rec.doi in seen_doi:
             continue
-
         t = _normalize_title(rec.title)
         if t and t in seen_titles:
             continue
-
         s = _normalize_title(rec.standard_number)
         if s and s in seen_standards:
             continue
