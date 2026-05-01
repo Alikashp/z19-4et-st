@@ -1,11 +1,18 @@
-from aiogram import Router
+from aiogram import Router, F
 from aiogram.filters import CommandStart
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from handlers.common import get_or_create_user
-from keyboards import main_menu_kb, main_reply_menu
+from states import ReportFlow, AbstractFlow, PresentationFlow, SourcesFlow
+from keyboards import (
+    main_menu_kb,
+    main_reply_menu,
+    input_type_menu,
+    sources_mode_menu,
+    tariffs_menu,
+)
 
 router = Router()
 
@@ -47,3 +54,69 @@ async def back_to_main(callback: CallbackQuery, state: FSMContext):
     )
 
     await callback.answer()
+
+
+@router.message(F.text == "📝 Сделать доклад")
+async def reply_menu_report(message: Message, state: FSMContext):
+    await state.clear()
+    await state.set_state(ReportFlow.choosing_input)
+    await state.update_data(material_type="report")
+    await message.answer(
+        "Выбери вариант создания",
+        reply_markup=input_type_menu("report")
+    )
+
+
+@router.message(F.text == "📚 Сделать реферат")
+async def reply_menu_abstract(message: Message, state: FSMContext):
+    await state.clear()
+    await state.set_state(AbstractFlow.choosing_input)
+    await state.update_data(material_type="abstract")
+    await message.answer(
+        "Выбери вариант создания",
+        reply_markup=input_type_menu("abstract")
+    )
+
+
+@router.message(F.text == "📊 Сделать презентацию")
+async def reply_menu_presentation(message: Message, state: FSMContext):
+    await state.clear()
+    await state.set_state(PresentationFlow.choosing_input)
+    await state.update_data(
+        material_type="presentation",
+        language="Русский",
+        slide_count=8,
+        design="Креативный"
+    )
+    await message.answer(
+        "Выбери вариант создания",
+        reply_markup=input_type_menu("pres")
+    )
+
+
+@router.message(F.text == "🔗 Оформить источники")
+async def reply_menu_sources(message: Message, state: FSMContext):
+    await state.clear()
+    await state.set_state(SourcesFlow.choosing_mode)
+    await message.answer(
+        "Выбери вариант создания",
+        reply_markup=sources_mode_menu()
+    )
+
+
+@router.message(F.text == "💳 Тарифы")
+async def reply_menu_tariffs(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer(
+        "Выберите тариф для генерации учебных материалов",
+        reply_markup=tariffs_menu()
+    )
+
+
+@router.message(F.text == "⚙️ Настройки")
+async def reply_menu_settings(message: Message, state: FSMContext):
+    await state.clear()
+    await message.answer(
+        "⚙️ Настройки\n\nПока доступен язык по умолчанию: Русский.",
+        reply_markup=main_menu_kb()
+    )
