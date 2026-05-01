@@ -9,12 +9,24 @@ from keyboards import (
     sources_count_kb, after_sources_kb, main_menu_kb,
 )
 from prompts import (
-    sources_by_topic_prompt, sources_format_prompt, FORMAT_DIFF_TEXT
+    sources_format_prompt, FORMAT_DIFF_TEXT
 )
 from services.llm import generate_text
+from services.sources_pipeline import generate_sources_by_topic
 from handlers.common import check_balance, deduct_generation
 
 router = Router()
+
+def _resolve_requested_count(raw_count: str) -> int:
+    """Преобразует count из кнопок (например, `5-7`) или ручного ввода в int."""
+    value = (raw_count or "").strip()
+    if "-" in value:
+        parts = [part.strip() for part in value.split("-", 1)]
+        if len(parts) == 2 and all(part.isdigit() for part in parts):
+            return int(parts[1])
+    if value.isdigit():
+        return int(value)
+    raise ValueError(f"Некорректное значение count: {raw_count}")
 
 
 @router.callback_query(lambda c: c.data == "menu:sources")
@@ -97,12 +109,11 @@ async def sources_count_custom(message: Message, state: FSMContext, db: AsyncSes
         if not await check_balance(db, message.from_user.id, message=message):
             await msg.delete()
             return
-        prompt = sources_by_topic_prompt(
+        result = await generate_sources_by_topic(
             topic=data.get("topic", ""),
-            count=data.get("count", "5"),
+            count=_resolve_requested_count(data.get("count", "5")),
             fmt=data.get("source_format", "ГОСТ"),
         )
-        result = await generate_text(prompt, max_tokens=2000)
         await deduct_generation(db, message.from_user.id)
         await msg.delete()
         await message.answer(
@@ -122,12 +133,11 @@ async def _generate_sources_by_topic(
     data = await state.get_data()
     msg = await callback.message.answer("⏳ Подбираю источники...")
     try:
-        prompt = sources_by_topic_prompt(
+        result = await generate_sources_by_topic(
             topic=data.get("topic", ""),
-            count=data.get("count", "5"),
+            count=_resolve_requested_count(data.get("count", "5")),
             fmt=data.get("source_format", "ГОСТ"),
         )
-        result = await generate_text(prompt, max_tokens=2000)
         await deduct_generation(db, callback.from_user.id)
         await msg.delete()
         await callback.message.answer(
