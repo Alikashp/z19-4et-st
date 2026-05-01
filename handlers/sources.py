@@ -17,6 +17,17 @@ from handlers.common import check_balance, deduct_generation
 
 router = Router()
 
+def _resolve_requested_count(raw_count: str) -> int:
+    """Преобразует count из кнопок (например, `5-7`) или ручного ввода в int."""
+    value = (raw_count or "").strip()
+    if "-" in value:
+        parts = [part.strip() for part in value.split("-", 1)]
+        if len(parts) == 2 and all(part.isdigit() for part in parts):
+            return int(parts[1])
+    if value.isdigit():
+        return int(value)
+    raise ValueError(f"Некорректное значение count: {raw_count}")
+
 
 @router.callback_query(lambda c: c.data == "menu:sources")
 async def sources_start(callback: CallbackQuery, state: FSMContext):
@@ -100,7 +111,7 @@ async def sources_count_custom(message: Message, state: FSMContext, db: AsyncSes
             return
         result = await generate_sources_by_topic(
             topic=data.get("topic", ""),
-            count=int(data.get("count", "5")),
+            count=_resolve_requested_count(data.get("count", "5")),
             fmt=data.get("source_format", "ГОСТ"),
         )
         await deduct_generation(db, message.from_user.id)
@@ -124,7 +135,7 @@ async def _generate_sources_by_topic(
     try:
         result = await generate_sources_by_topic(
             topic=data.get("topic", ""),
-            count=int(data.get("count", "5")),
+            count=_resolve_requested_count(data.get("count", "5")),
             fmt=data.get("source_format", "ГОСТ"),
         )
         await deduct_generation(db, callback.from_user.id)
