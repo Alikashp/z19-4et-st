@@ -1,4 +1,5 @@
 import os
+import re
 
 from aiogram import Router, F, Bot
 from aiogram.types import CallbackQuery, Message, FSInputFile
@@ -43,6 +44,14 @@ def _load_last_material(user_id: int) -> str:
 
     with open(path, "r", encoding="utf-8") as f:
         return f.read()
+
+
+def _strip_markdown_stars(text: str) -> str:
+    if not text:
+        return text
+    cleaned = re.sub(r"\*\*(.*?)\*\*", r"\1", text, flags=re.DOTALL)
+    cleaned = re.sub(r"\*(.*?)\*", r"\1", cleaned, flags=re.DOTALL)
+    return cleaned
 
 
 # ─── Entry ───────────────────────────────────────────────────
@@ -318,7 +327,7 @@ async def report_generate(callback: CallbackQuery, state: FSMContext, db: AsyncS
             volume=data.get("volume", "auto"),
         )
 
-        full_text = await generate_text(prompt, max_tokens=4000)
+        full_text = _strip_markdown_stars(await generate_text(prompt, max_tokens=4000))
 
         await state.update_data(generated_text=full_text)
         _save_last_material(callback.from_user.id, full_text)
@@ -423,7 +432,7 @@ async def _generate_speech(
 
     try:
         prompt = speech_prompt(material_text[:3000])
-        result = await generate_text(prompt, max_tokens=1000)
+        result = _strip_markdown_stars(await generate_text(prompt, max_tokens=1000))
 
         await deduct_generation(db, callback.from_user.id)
 
@@ -453,7 +462,7 @@ async def _generate_qa(
 
     try:
         prompt = qa_prompt(material_text[:3000])
-        result = await generate_text(prompt, max_tokens=1000)
+        result = _strip_markdown_stars(await generate_text(prompt, max_tokens=1000))
 
         await deduct_generation(db, callback.from_user.id)
 

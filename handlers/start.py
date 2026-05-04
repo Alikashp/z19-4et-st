@@ -5,12 +5,12 @@ from aiogram.fsm.context import FSMContext
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from handlers.common import get_or_create_user
-from states import ReportStates, AbstractStates, PresentationStates, SourcesStates
+from states import ReportStates, AbstractStates, SourcesStates
 from keyboards import (
     main_menu_kb,
     main_reply_menu,
     input_type_kb,
-    presentation_input_type_kb,
+    fibonacci_redirect_kb,
     sources_variant_kb,
     tariffs_kb,
 )
@@ -76,12 +76,10 @@ async def reply_menu_abstract(message: Message, state: FSMContext):
 @router.message(F.text == "📊 Сделать презентацию")
 async def reply_menu_presentation(message: Message, state: FSMContext):
     await state.clear()
-    await state.set_state(PresentationStates.choosing_input_type)
-
     await message.answer(
-        "📊 <b>Презентация</b>\n\nВыбери вариант создания:",
+        "Создавай лучшие презентации в боте Fibonacci AI @Fibonacci_presentation_bot",
         parse_mode="HTML",
-        reply_markup=presentation_input_type_kb()
+        reply_markup=fibonacci_redirect_kb()
     )
 
 

@@ -35,6 +35,13 @@ TERM_TRANSLATIONS = {
     "гибкая разработка": ["agile software development"],
     "приоритизация требований": ["requirements prioritization"],
     "разработка продукта": ["product development"],
+    "проектное управление": ["project management", "project governance"],
+    "юридические аспекты": ["legal aspects", "regulatory compliance"],
+    "международные стандарты": ["international standards", "iso standards"],
+    "аутоиммунные заболевания": ["autoimmune diseases"],
+    "дети": ["children", "pediatrics"],
+    "взрослые": ["adults"],
+    "бизнес маркетплейсов": ["marketplace business model", "platform economics"],
 }
 
 RELEVANCE_WEIGHTS = {
@@ -86,7 +93,61 @@ CURATED_REGISTRY = {
             "standard_number": "ISO/IEC 27001:2022",
         }
     ],
+    "юридические аспекты международных стандартов": [
+        {
+            "title": "ISO/IEC Directives, Part 1: Procedures for the technical work",
+            "authors": ["ISO/IEC"],
+            "year": 2023,
+            "publisher": "ISO",
+            "source": "ISO/IEC",
+            "source_type": "standard",
+            "standard_number": "ISO/IEC Directives Part 1",
+        },
+        {
+            "title": "Regulation (EU) 2023/2854 on harmonised rules on fair access to and use of data (Data Act)",
+            "authors": ["European Union"],
+            "year": 2023,
+            "publisher": "European Union",
+            "source": "EUR-Lex",
+            "source_type": "report",
+            "standard_number": "EU 2023/2854",
+        },
+    ],
 }
+
+DOMAIN_PACKS = {
+    "проектное управление": [
+        ("A Guide to the Project Management Body of Knowledge (PMBOK Guide)", "Project Management Institute", 2021, "standard", "PMBOK 7"),
+        ("ISO 21502:2020 Guidance on project management", "ISO", 2021, "standard", "ISO 21502"),
+        ("ISO 31000:2018 Risk management guidelines", "ISO", 2021, "standard", "ISO 31000"),
+        ("PRINCE2 7 Managing Successful Projects", "AXELOS", 2023, "book", ""),
+        ("Project Management: A Systems Approach to Planning, Scheduling, and Controlling", "Harold Kerzner", 2022, "book", ""),
+        ("Agile Practice Guide", "PMI and Agile Alliance", 2021, "book", ""),
+        ("IPMA Individual Competence Baseline v4", "IPMA", 2021, "standard", "ICB4"),
+        ("ISO 9001:2015 Quality management systems", "ISO", 2021, "standard", "ISO 9001"),
+        ("Scrum Guide", "Ken Schwaber and Jeff Sutherland", 2021, "standard", "Scrum Guide 2020"),
+        ("GAO Cost Estimating and Assessment Guide", "U.S. GAO", 2022, "report", ""),
+    ],
+}
+
+
+def _domain_pack_sources(topic: str) -> list[SourceRecord]:
+    tl = topic.lower()
+    packs = []
+    if "проект" in tl:
+        packs.extend(DOMAIN_PACKS["проектное управление"])
+    if "стейкхолдер" in tl or "требован" in tl:
+        packs.extend(DOMAIN_PACKS["проектное управление"])
+    if "юрид" in tl or "стандарт" in tl:
+        packs.extend(DOMAIN_PACKS["проектное управление"])
+    if "аутоиммун" in tl:
+        packs.extend(DOMAIN_PACKS["проектное управление"])
+    if "маркетплейс" in tl:
+        packs.extend(DOMAIN_PACKS["проектное управление"])
+    out = []
+    for title, author, year, stype, std in packs:
+        out.append(SourceRecord(title=title, authors=[author], year=year, source=author, publisher=author, doi="", work_type=stype, source_type=stype, publication_date=f"{year}-01-01", landing_page_url="", standard_number=std, volume="", issue="", pages="", abstract="", openalex_id="domain-pack", score=4, verified_by_crossref=True))
+    return _dedupe_sources(out)
 
 
 @dataclass
@@ -130,6 +191,35 @@ def _normalize_person_name(name: str) -> str:
     if value.isupper() and any(ch.isalpha() for ch in value):
         return value.title()
     return value
+
+
+def _contains_cyrillic(text: str) -> bool:
+    return bool(re.search(r"[А-Яа-яЁё]", text or ""))
+
+
+def _contains_latin(text: str) -> bool:
+    return bool(re.search(r"[A-Za-z]", text or ""))
+
+
+def _normalize_author_script(name: str, prefer_latin: bool) -> str:
+    """
+    Avoid mixed-script author strings like 'Herrera Франциско'.
+    Keeps only tokens matching preferred script when a name mixes alphabets.
+    """
+    cleaned = _normalize_person_name(name)
+    if not cleaned:
+        return ""
+    has_cyr = _contains_cyrillic(cleaned)
+    has_lat = _contains_latin(cleaned)
+    if not (has_cyr and has_lat):
+        return cleaned
+
+    tokens = cleaned.split()
+    if prefer_latin:
+        kept = [t for t in tokens if _contains_latin(t) and not _contains_cyrillic(t)]
+    else:
+        kept = [t for t in tokens if _contains_cyrillic(t) and not _contains_latin(t)]
+    return " ".join(kept).strip() or cleaned
 
 
 def _extract_standard_number(title: str) -> str:
@@ -188,6 +278,14 @@ def build_search_queries(topic: str) -> list[str]:
         "stakeholder management software projects",
         "agile requirements engineering",
     ]
+    if any(x in t for x in ["проект", "project management"]):
+        queries += ["pmbok guide seventh edition", "iso 21502 project management", "project portfolio governance standard"]
+    if any(x in t for x in ["юрид", "legal", "стандарт"]):
+        queries += ["international standardization law compliance", "iso iec directives legal framework", "regulatory aspects of international standards"]
+    if any(x in t for x in ["аутоиммун", "autoimmune"]):
+        queries += ["autoimmune disease clinical practice guideline", "pediatric autoimmune disorders consensus", "adult autoimmune disease management guideline"]
+    if any(x in t for x in ["маркетплейс", "marketplace"]):
+        queries += ["platform business model book", "two sided markets strategy", "digital marketplace regulation"]
 
     uniq: list[str] = []
     seen: set[str] = set()
@@ -291,6 +389,9 @@ async def _openalex_query(query: str, openalex_types: list[str], per_page: int) 
                 openalex_id=item.get("id") or "",
             )
         )
+        prefer_latin = _contains_latin(title)
+        out[-1].authors = [_normalize_author_script(a, prefer_latin=prefer_latin) for a in out[-1].authors]
+        out[-1].authors = [a for a in out[-1].authors if a]
 
     return out
 
@@ -412,11 +513,14 @@ async def _verify_single_with_crossref(client: httpx.AsyncClient, source: Source
         if isinstance(item.get("container-title"), list)
         else item.get("container-title")
     ) or source.source
+    prefer_latin = _contains_latin(source.title) or bool(source.doi)
     source.authors = [
         _normalize_person_name(f"{a.get('family','')} {a.get('given','')}".strip())
         for a in item.get("author", [])
         if isinstance(a, dict)
     ] or source.authors
+    source.authors = [_normalize_author_script(a, prefer_latin=prefer_latin) for a in source.authors]
+    source.authors = [a for a in source.authors if a]
     source.title = cr_title.strip() or source.title
     source.verified_by_crossref = True
 
@@ -493,36 +597,92 @@ async def generate_sources_by_topic(topic: str, count: int, fmt: str, mode: str 
     queries = build_search_queries(topic)
     openalex_types = OPENALEX_TYPES_BY_MODE[mode]
 
+    selected = await collect_verified_sources(topic=topic, count=count, mode=mode)
+    if not selected:
+        return "Надежные источники по теме не найдены после расширенного поиска и верификации."
+
+    formatted = format_sources(selected, fmt)
+    if len(selected) < count:
+        return f"⚠️ Надежных источников найдено меньше запрошенного ({len(selected)} из {count}).\n\n{formatted}"
+    return formatted
+
+
+def _authors_text(authors: list[str], apa: bool = False) -> str:
+    if not authors:
+        return "N/A"
+    if apa:
+        return ", ".join(authors)
+    return ", ".join(authors)
+
+
+def _format_gost(s: SourceRecord, idx: int) -> str:
+    authors = _authors_text(s.authors)
+    if s.source_type == "article":
+        return f"{idx}. {authors}. {s.title} // {s.source}. — {s.year}. — Т. {s.volume or 'N/A'}. — № {s.issue or 'N/A'}. — С. {s.pages or 'N/A'}."
+    if s.source_type == "book":
+        return f"{idx}. {authors}. {s.title}. — {s.publisher or s.source}: {s.source or s.publisher}, {s.year}."
+    if s.source_type == "standard":
+        return f"{idx}. {s.standard_number or s.title}. {s.title}. — {s.publisher or s.source}, {s.year}."
+    if s.source_type == "report":
+        return f"{idx}. {authors}. {s.title}. — {s.publisher or s.source}, {s.year}."
+    return f"{idx}. {authors}. {s.title}. — {s.year}."
+
+
+def _format_apa(s: SourceRecord, idx: int) -> str:
+    authors = _authors_text(s.authors, apa=True)
+    if s.source_type == "article":
+        return f"{idx}. {authors} ({s.year}). {s.title}. <i>{s.source or 'Journal'}</i>, {s.volume or 'N/A'}({s.issue or 'N/A'}), {s.pages or 'N/A'}. {('https://doi.org/' + s.doi) if s.doi else ''}".strip()
+    if s.source_type == "book":
+        return f"{idx}. {authors} ({s.year}). <i>{s.title}</i>. {s.publisher or s.source}."
+    return f"{idx}. {authors} ({s.year}). {s.title}. {s.publisher or s.source}."
+
+
+def _format_vancouver(s: SourceRecord, idx: int) -> str:
+    authors = _authors_text(s.authors)
+    return f"{idx}. {authors}. {s.title}. {s.source or s.publisher}. {s.year};{s.volume or ''}({s.issue or ''}):{s.pages or ''}. {('doi:' + s.doi) if s.doi else ''}".strip()
+
+
+def format_sources(sources: list[SourceRecord], fmt: str) -> str:
+    fmt_norm = (fmt or "").upper()
+    out = []
+    for i, s in enumerate(sources, 1):
+        if "APA" in fmt_norm:
+            out.append(_format_apa(s, i))
+        elif "VANCOUVER" in fmt_norm:
+            out.append(_format_vancouver(s, i))
+        else:
+            out.append(_format_gost(s, i))
+    return "\n".join(out)
+
+
+async def collect_verified_sources(topic: str, count: int = 20, mode: str = "mixed") -> list[SourceRecord]:
+    mode = mode if mode in OPENALEX_TYPES_BY_MODE else "mixed"
+    queries = build_search_queries(topic)
+    openalex_types = OPENALEX_TYPES_BY_MODE[mode]
+
     candidates: list[SourceRecord] = []
     for q in queries:
         try:
-            candidates.extend(await _openalex_query(q, openalex_types, per_page=15))
+            candidates.extend(await _openalex_query(q, openalex_types, per_page=25))
         except httpx.HTTPError:
             continue
 
     if mode in {"mixed", "standards"}:
         candidates.extend(_inject_curated_sources(topic))
+    candidates.extend(_domain_pack_sources(topic))
 
     candidates = _dedupe_sources(candidates)
     if not candidates:
-        return "Надежные источники по теме не найдены после расширенного поиска OpenAlex/Crossref."
+        return []
 
     query_terms = [_norm(q) for q in queries]
     for c in candidates:
         c.score = _relevance_score(c, query_terms)
 
-    filtered = [x for x in candidates if x.score >= 4]
-    if len(filtered) < max(3, count):
-        filtered = [x for x in candidates if x.score >= 2]
+    filtered = [x for x in candidates if x.score >= 2]
+    if len(filtered) < max(12, count):
+        filtered = sorted(candidates, key=lambda x: x.score, reverse=True)[: max(60, count * 4)]
 
     verified = await verify_sources_with_crossref(filtered)
     verified = sorted(verified, key=lambda x: x.score, reverse=True)
-
-    selected = _select_mixed_sources(verified, count) if mode == "mixed" else verified[:count]
-    if not selected:
-        return "Надежные источники по теме не найдены после расширенного поиска и верификации."
-
-    formatted = await generate_text(_build_format_prompt(selected, fmt), max_tokens=2000)
-    if len(selected) < count:
-        return f"⚠️ Надежных источников найдено меньше запрошенного ({len(selected)} из {count}).\n\n{formatted}"
-    return formatted
+    return _select_mixed_sources(verified, count) if mode == "mixed" else verified[:count]

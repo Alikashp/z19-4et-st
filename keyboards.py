@@ -158,6 +158,14 @@ def presentation_input_type_kb() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def fibonacci_redirect_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Перейти в бот", url="https://t.me/Fibonacci_presentation_bot")]
+        ]
+    )
+
+
 def presentation_settings_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(
@@ -226,6 +234,9 @@ def sources_format_kb(prefix: str) -> InlineKeyboardMarkup:
     builder.row(
         InlineKeyboardButton(text="📋 ГОСТ", callback_data=f"{prefix}:format:ГОСТ"),
         InlineKeyboardButton(text="📋 APA 7", callback_data=f"{prefix}:format:APA7"),
+        InlineKeyboardButton(text="📋 Vancouver", callback_data=f"{prefix}:format:VANCOUVER"),
+    )
+    builder.row(
         InlineKeyboardButton(text="❓ В чём отличие?", callback_data=f"{prefix}:format:diff"),
     )
     builder.row(InlineKeyboardButton(text="⬅️ Вернуться в главное меню", callback_data="menu:main"))

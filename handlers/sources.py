@@ -17,6 +17,13 @@ from handlers.common import check_balance, deduct_generation
 
 router = Router()
 
+
+def _has_enough_biblio_data(text: str) -> bool:
+    t = text or ""
+    has_year = any(ch.isdigit() for ch in t) and any(str(y) in t for y in range(1900, 2101))
+    has_sep = any(sym in t for sym in ["//", "—", ":", "."])
+    return has_year and has_sep
+
 def _resolve_requested_count(raw_count: str) -> int:
     """Преобразует count из кнопок (например, `5-7`) или ручного ввода в int."""
     value = (raw_count or "").strip()
@@ -192,11 +199,17 @@ async def sources_own_format(callback: CallbackQuery, state: FSMContext, db: Asy
     msg = await callback.message.answer("⏳ Оформляю источники...")
 
     try:
-        prompt = sources_format_prompt(
-            sources=data.get("sources_text", ""),
-            fmt=choice,
-        )
+        raw_sources = data.get("sources_text", "")
+        prompt = sources_format_prompt(sources=raw_sources, fmt=choice)
         result = await generate_text(prompt, max_tokens=2000)
+
+        if not _has_enough_biblio_data(raw_sources):
+            topic_hint = raw_sources.split("\n")[0][:120]
+            found = await generate_sources_by_topic(topic=topic_hint, count=7, fmt=choice)
+            result = (
+                "Не хватает данных для оформления, нашел следующие источники по вашему запросу:\n\n"
+                f"{found}\n\nОформление вашего исходного текста (с пометками):\n{result}"
+            )
         await deduct_generation(db, callback.from_user.id)
         await msg.delete()
         await callback.message.answer(
