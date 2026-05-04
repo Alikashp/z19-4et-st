@@ -7,7 +7,6 @@ from datetime import date
 
 import httpx
 
-from services.llm import generate_text
 
 OPENALEX_URL = "https://api.openalex.org/works"
 CROSSREF_WORKS_URL = "https://api.crossref.org/works"
@@ -592,28 +591,6 @@ def _select_mixed_sources(sources: list[SourceRecord], count: int) -> list[Sourc
         selected.extend(leftovers[: max(0, count - len(selected))])
 
     return selected[:count]
-
-
-def _build_format_prompt(verified_sources: list[SourceRecord], fmt: str) -> str:
-    lines = []
-    for i, s in enumerate(verified_sources, start=1):
-        doi = f"DOI: {s.doi}" if s.doi else "DOI: N/A"
-        lines.append(
-            f"{i}) source_type={s.source_type}; title={_fix_caps(s.title)}; authors={', '.join(s.authors) if s.authors else 'N/A'}; "
-            f"year={s.year}; source={_fix_caps(s.source or 'N/A')}; publisher={s.publisher or 'N/A'}; volume={s.volume or 'N/A'}; "
-            f"issue={s.issue or 'N/A'}; pages={s.pages or 'N/A'}; {doi}; standard_number={s.standard_number or 'N/A'}"
-        )
-
-    return (
-        f"Оформи ТОЛЬКО verified_sources в формате {fmt}.\n"
-        "GPT только оформляет, не ищет и не добавляет источники из памяти.\n"
-        "Не придумывай год, страницы, DOI, авторов, журнал, издательство, ISBN, URL.\n"
-        "Не переводи названия. Русские оставляй на русском, английские на английском.\n"
-        "Не пиши авторов КАПСОМ. Для DOI используй единый вид: DOI: 10.xxxx/xxxx.\n"
-        "URL вида doi.org добавляй только если формат явно требует URL.\n"
-        "Учитывай source_type (article/book/standard/report). Верни только список.\n\n"
-        "verified_sources:\n" + "\n".join(lines)
-    )
 
 
 async def generate_sources_by_topic(topic: str, count: int, fmt: str, mode: str = "mixed") -> str:
