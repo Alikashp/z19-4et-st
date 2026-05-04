@@ -158,6 +158,14 @@ def presentation_input_type_kb() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def fibonacci_redirect_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Перейти в бот", url="https://t.me/Fibonacci_presentation_bot")]
+        ]
+    )
+
+
 def presentation_settings_kb() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(
