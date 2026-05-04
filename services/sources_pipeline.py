@@ -595,9 +595,6 @@ def _select_mixed_sources(sources: list[SourceRecord], count: int) -> list[Sourc
 
 async def generate_sources_by_topic(topic: str, count: int, fmt: str, mode: str = "mixed") -> str:
     mode = mode if mode in OPENALEX_TYPES_BY_MODE else "mixed"
-    queries = build_search_queries(topic)
-    openalex_types = OPENALEX_TYPES_BY_MODE[mode]
-
     selected = await collect_verified_sources(topic=topic, count=count, mode=mode)
     if not selected:
         return "Надежные источники по теме не найдены после расширенного поиска и верификации."
@@ -692,9 +689,6 @@ def format_sources(sources: list[SourceRecord], fmt: str) -> str:
 
 async def collect_verified_sources(topic: str, count: int = 20, mode: str = "mixed") -> list[SourceRecord]:
     mode = mode if mode in OPENALEX_TYPES_BY_MODE else "mixed"
-    queries = build_search_queries(topic)
-    openalex_types = OPENALEX_TYPES_BY_MODE[mode]
-
     candidates: list[SourceRecord] = []
     for q in queries:
         try:
