@@ -193,6 +193,35 @@ def _normalize_person_name(name: str) -> str:
     return value
 
 
+def _contains_cyrillic(text: str) -> bool:
+    return bool(re.search(r"[А-Яа-яЁё]", text or ""))
+
+
+def _contains_latin(text: str) -> bool:
+    return bool(re.search(r"[A-Za-z]", text or ""))
+
+
+def _normalize_author_script(name: str, prefer_latin: bool) -> str:
+    """
+    Avoid mixed-script author strings like 'Herrera Франциско'.
+    Keeps only tokens matching preferred script when a name mixes alphabets.
+    """
+    cleaned = _normalize_person_name(name)
+    if not cleaned:
+        return ""
+    has_cyr = _contains_cyrillic(cleaned)
+    has_lat = _contains_latin(cleaned)
+    if not (has_cyr and has_lat):
+        return cleaned
+
+    tokens = cleaned.split()
+    if prefer_latin:
+        kept = [t for t in tokens if _contains_latin(t) and not _contains_cyrillic(t)]
+    else:
+        kept = [t for t in tokens if _contains_cyrillic(t) and not _contains_latin(t)]
+    return " ".join(kept).strip() or cleaned
+
+
 def _extract_standard_number(title: str) -> str:
     m = re.search(r"\b(?:ISO|IEC|ISO/IEC|IEEE)\s?[\w\-/.:]+", title or "", re.IGNORECASE)
     return m.group(0).strip() if m else ""
@@ -360,6 +389,9 @@ async def _openalex_query(query: str, openalex_types: list[str], per_page: int) 
                 openalex_id=item.get("id") or "",
             )
         )
+        prefer_latin = _contains_latin(title)
+        out[-1].authors = [_normalize_author_script(a, prefer_latin=prefer_latin) for a in out[-1].authors]
+        out[-1].authors = [a for a in out[-1].authors if a]
 
     return out
 
@@ -481,11 +513,14 @@ async def _verify_single_with_crossref(client: httpx.AsyncClient, source: Source
         if isinstance(item.get("container-title"), list)
         else item.get("container-title")
     ) or source.source
+    prefer_latin = _contains_latin(source.title) or bool(source.doi)
     source.authors = [
         _normalize_person_name(f"{a.get('family','')} {a.get('given','')}".strip())
         for a in item.get("author", [])
         if isinstance(a, dict)
     ] or source.authors
+    source.authors = [_normalize_author_script(a, prefer_latin=prefer_latin) for a in source.authors]
+    source.authors = [a for a in source.authors if a]
     source.title = cr_title.strip() or source.title
     source.verified_by_crossref = True
 
