@@ -234,6 +234,9 @@ def sources_format_kb(prefix: str) -> InlineKeyboardMarkup:
     builder.row(
         InlineKeyboardButton(text="📋 ГОСТ", callback_data=f"{prefix}:format:ГОСТ"),
         InlineKeyboardButton(text="📋 APA 7", callback_data=f"{prefix}:format:APA7"),
+        InlineKeyboardButton(text="📋 Vancouver", callback_data=f"{prefix}:format:Vancouver"),
+    )
+    builder.row(
         InlineKeyboardButton(text="❓ В чём отличие?", callback_data=f"{prefix}:format:diff"),
     )
     builder.row(InlineKeyboardButton(text="⬅️ Вернуться в главное меню", callback_data="menu:main"))
