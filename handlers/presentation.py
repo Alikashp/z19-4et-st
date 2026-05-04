@@ -5,9 +5,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from states import PresentationStates
 from keyboards import (
-    presentation_input_type_kb, presentation_settings_kb,
+    presentation_settings_kb,
     presentation_language_kb, presentation_slides_kb,
     presentation_design_kb, after_presentation_kb,
+    fibonacci_redirect_kb,
 )
 from services.fibonacci_api import create_presentation
 from handlers.common import check_balance, deduct_generation
@@ -34,11 +35,10 @@ def _settings_text(data: dict) -> str:
 
 @router.callback_query(lambda c: c.data == "menu:presentation")
 async def presentation_start(callback: CallbackQuery, state: FSMContext):
-    await state.set_state(PresentationStates.choosing_input_type)
     await callback.message.answer(
-        "📊 <b>Презентация</b>\n\nВыбери вариант создания:",
+        "Создавай лучшие презентации в боте Fibonacci AI @Fibonacci_presentation_bot",
         parse_mode="HTML",
-        reply_markup=presentation_input_type_kb(),
+        reply_markup=fibonacci_redirect_kb(),
     )
     await callback.answer()
 

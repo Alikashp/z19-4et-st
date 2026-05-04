@@ -19,6 +19,7 @@ from services.llm import generate_text
 from services.file_generator import generate_pdf, get_preview
 from services.document_reader import read_document
 from handlers.common import check_balance, deduct_generation
+from handlers.report import _strip_markdown_stars
 
 
 router = Router()
@@ -307,7 +308,7 @@ async def abstract_generate(callback: CallbackQuery, state: FSMContext, db: Asyn
             volume=data.get("volume", "auto"),
         )
 
-        full_text = await generate_text(prompt, max_tokens=5000)
+        full_text = _strip_markdown_stars(await generate_text(prompt, max_tokens=5000))
 
         await state.update_data(generated_text=full_text)
         _save_last_material(callback.from_user.id, full_text)
