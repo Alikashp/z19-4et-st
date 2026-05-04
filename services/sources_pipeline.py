@@ -1,8 +1,3 @@
-diff --git a/services/sources_pipeline.py b/services/sources_pipeline.py
-index 4e7e7003775a948dc26bfd6a10e4307203548439..8741a44e63a4943615322fb2d38079e9bc167cf7 100644
---- a/services/sources_pipeline.py
-+++ b/services/sources_pipeline.py
-@@ -1,35 +1,34 @@
  from __future__ import annotations
  
  import asyncio
