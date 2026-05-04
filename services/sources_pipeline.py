@@ -33,10 +33,9 @@ TERM_TRANSLATIONS = {
     "ит-стартап": ["it startup", "software startup"],
     "цифровой продукт": ["digital product", "software product"],
     "гибкая разработка": ["agile software development"],
-@@ -93,50 +92,74 @@ CURATED_REGISTRY = {
-            "standard_number": "ISO/IEC 27001:2022",
-        }
-    ],
+}
+
+CURATED_REGISTRY = {
     "юридические аспекты международных стандартов": [
         {
             "title": "ISO/IEC Directives, Part 1: Procedures for the technical work",
@@ -58,7 +57,6 @@ TERM_TRANSLATIONS = {
         },
     ],
 }
-
 
 
 FORMAT_REQUIREMENTS = """Обязательные правила оформления источников (рабочее резюме):
@@ -108,7 +106,8 @@ def _domain_pack_sources(topic: str) -> list[SourceRecord]:
         packs.extend(DOMAIN_PACKS["проектное управление"])
     if "юрид" in tl or "стандарт" in tl:
         packs.extend(DOMAIN_PACKS["проектное управление"])
-@@ -548,92 +571,146 @@ async def verify_sources_with_crossref(candidates: list[SourceRecord]) -> list[S
+
+    return [SourceRecord(title=t, authors=[a], year=y, source_type=st, standard_number=sn) for (t, a, y, st, sn) in packs]
 
 
 def _select_mixed_sources(sources: list[SourceRecord], count: int) -> list[SourceRecord]:
