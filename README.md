@@ -84,3 +84,14 @@ telegram_study_bot/
 
 Замени `services/llm.py`: функция `generate_text(prompt, max_tokens)` должна возвращать строку.
 Совместима с любым OpenAI-совместимым API (Anthropic, Mistral, local Ollama и т.д.).
+
+
+### Проверка целостности перед деплоем
+
+Если бот не стартует из-за синтаксической ошибки в `services/sources_pipeline.py` (например, `IndentationError` или случайно попавшие строки git-diff), запустите:
+
+```bash
+python scripts/validate_sources_pipeline.py
+python -m py_compile services/sources_pipeline.py handlers/sources.py bot.py
+```
+
