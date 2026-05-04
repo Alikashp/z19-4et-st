@@ -12,7 +12,7 @@ from prompts import (
     sources_format_prompt, FORMAT_DIFF_TEXT
 )
 from services.llm import generate_text
-from services.sources_pipeline import generate_sources_by_topic
+from services.sources_pipeline import generate_sources_by_topic, verify_own_sources
 from handlers.common import check_balance, deduct_generation
 
 router = Router()
@@ -189,23 +189,46 @@ async def sources_own_format(callback: CallbackQuery, state: FSMContext, db: Asy
         return
 
     data = await state.get_data()
-    msg = await callback.message.answer("⏳ Оформляю источники...")
+    sources_text = data.get("sources_text", "")
 
+    # ── Шаг 1: верификация источников ──
+    msg = await callback.message.answer("🔍 Проверяю источники на корректность...")
     try:
-        prompt = sources_format_prompt(
-            sources=data.get("sources_text", ""),
-            fmt=choice,
+        verification_result = await verify_own_sources(sources_text)
+    except Exception:
+        verification_result = None
+
+    # Если верификация нашла проблемы (⚠️ или ✏️) — показываем отчёт
+    has_issues = verification_result and ("⚠️" in verification_result or "✏️" in verification_result)
+
+    if has_issues:
+        await msg.delete()
+        await callback.message.answer(
+            "🔎 <b>Проверка источников:</b>\n\n" + verification_result,
+            parse_mode="HTML",
+            reply_markup=after_sources_kb(),
         )
+        # Всё равно оформляем то, что есть — по исходному тексту
+    else:
+        await msg.edit_text("⏳ Оформляю источники...")
+
+    # ── Шаг 2: оформление ──
+    try:
+        prompt = sources_format_prompt(sources=sources_text, fmt=choice)
         result = await generate_text(prompt, max_tokens=2000)
         await deduct_generation(db, callback.from_user.id)
-        await msg.delete()
+        if not has_issues:
+            await msg.delete()
         await callback.message.answer(
             f"🔗 <b>Оформленные источники ({choice}):</b>\n\n{result}",
             parse_mode="HTML",
             reply_markup=after_sources_kb(),
         )
     except Exception as e:
-        await msg.edit_text(f"❌ Ошибка: {e}")
+        if not has_issues:
+            await msg.edit_text(f"❌ Ошибка: {e}")
+        else:
+            await callback.message.answer(f"❌ Ошибка при оформлении: {e}")
 
     await callback.answer()
 
