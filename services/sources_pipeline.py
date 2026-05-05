@@ -312,8 +312,7 @@ def _parse_openalex_work(work: dict) -> Optional[SourceRecord]:
     source_type = "book" if raw_type in ("book", "monograph") else \
                   "standard" if raw_type == "standard" else \
                   "report" if raw_type == "report" else "article"
-    publisher = ((work.get("host_venue") or {}).get("publisher")
-                 or source_info.get("host_organization_name"))
+    publisher = source_info.get("host_organization_name")
     return SourceRecord(
         title=title, authors=authors, year=pub_year, source=journal,
         publisher=publisher, volume=str(volume) if volume else None,
@@ -328,7 +327,7 @@ async def _openalex_query(query: str, types: list[str], per_page: int = 25) -> l
         "filter": f"type:{'|'.join(types)},publication_year:>={MIN_YEAR}",
         "per-page": per_page,
         "sort": "relevance_score:desc",
-        "select": "title,authorships,publication_year,primary_location,doi,biblio,type,host_venue",
+        "select": "title,authorships,publication_year,primary_location,doi,biblio,type",
     }
     async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
         resp = await client.get(OPENALEX_URL, params=params)
