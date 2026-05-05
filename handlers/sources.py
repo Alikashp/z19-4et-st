@@ -191,30 +191,32 @@ async def sources_own_format(callback: CallbackQuery, state: FSMContext, db: Asy
     data = await state.get_data()
     sources_text = data.get("sources_text", "")
 
-    # ── Шаг 1: верификация источников ──
+    # ── Шаг 1: верификация и дополнение источников ──
     msg = await callback.message.answer("🔍 Проверяю источники на корректность...")
+    completed_sources = sources_text
+    verification_report = None
     try:
-        verification_result = await verify_own_sources(sources_text)
+        verification_report, completed_sources = await verify_own_sources(sources_text)
     except Exception:
-        verification_result = None
+        pass
 
     # Если верификация нашла проблемы (⚠️ или ✏️) — показываем отчёт
-    has_issues = verification_result and ("⚠️" in verification_result or "✏️" in verification_result)
+    has_issues = verification_report and ("⚠️" in verification_report or "✏️" in verification_report)
 
     if has_issues:
         await msg.delete()
         await callback.message.answer(
-            "🔎 <b>Проверка источников:</b>\n\n" + verification_result,
+            "🔎 <b>Проверка источников:</b>\n\n" + verification_report,
             parse_mode="HTML",
             reply_markup=after_sources_kb(),
         )
-        # Всё равно оформляем то, что есть — по исходному тексту
+        
     else:
         await msg.edit_text("⏳ Оформляю источники...")
 
-    # ── Шаг 2: оформление ──
+    # ── Шаг 2: оформление — используем дополненные источники ──
     try:
-        prompt = sources_format_prompt(sources=sources_text, fmt=choice)
+        prompt = sources_format_prompt(sources=completed_sources, fmt=choice)
         result = await generate_text(prompt, max_tokens=2000)
         await deduct_generation(db, callback.from_user.id)
         if not has_issues:
