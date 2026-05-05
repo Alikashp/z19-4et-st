@@ -32,6 +32,8 @@ TERM_TRANSLATIONS = {
     "управление требованиями": ["requirements management", "requirements engineering"],
     "требования стейкхолдеров": ["stakeholder requirements"],
     "управление стейкхолдерами": ["stakeholder management"],
+    "управление проектами": ["project management", "project management body of knowledge"],
+    "проектный менеджмент": ["project management", "agile project management"],
     "ит-стартап": ["it startup", "software startup"],
     "цифровой продукт": ["digital product", "software product"],
     "гибкая разработка": ["agile software development"],
@@ -45,6 +47,8 @@ TERM_TRANSLATIONS = {
     "логистика": ["logistics management", "supply chain management"],
     "инвестиции": ["investment analysis", "investment management"],
     "страхование": ["insurance economics"],
+    "цифровой маркетинг": ["digital marketing", "social media marketing"],
+    "стратегический менеджмент": ["strategic management", "corporate strategy"],
 }
 
 CURATED_REGISTRY: dict[str, list[dict]] = {
@@ -115,6 +119,22 @@ CURATED_REGISTRY: dict[str, list[dict]] = {
          "authors": ["Лаврушин О.И."], "year": 2023,
          "publisher": "КноРус", "source_type": "book"},
     ],
+    "управление проектами": [
+        {"title": "A Guide to the Project Management Body of Knowledge (PMBOK® Guide)",
+         "authors": ["Project Management Institute"], "year": 2021,
+         "publisher": "Project Management Institute", "source_type": "standard",
+         "standard_number": "PMBOK 7"},
+        {"title": "ISO 21502:2020 Project, programme and portfolio management — Guidance on project management",
+         "authors": ["ISO"], "year": 2020, "publisher": "ISO",
+         "source_type": "standard", "standard_number": "ISO 21502:2020"},
+        {"title": "Управление проектами: фундаментальный курс",
+         "authors": ["Аньшин В.М.", "Ильина О.Н."], "year": 2022,
+         "publisher": "Издательский дом ВШЭ", "source_type": "book"},
+        {"title": "Scrum Guide",
+         "authors": ["Schwaber K.", "Sutherland J."], "year": 2020,
+         "publisher": "Scrum.org", "source_type": "standard",
+         "standard_number": "Scrum Guide 2020"},
+    ],
 }
 
 CURATED_KEYS: dict[str, list[str]] = {
@@ -128,6 +148,7 @@ CURATED_KEYS: dict[str, list[str]] = {
     "гражданское право": ["гражданск"],
     "трудовое право": ["трудов"],
     "банковское дело": ["банк"],
+    "управление проектами": ["управление проект", "проектный менедж", "управлени проект"],
 }
 
 DOMAIN_PACKS = {
@@ -238,7 +259,8 @@ def _domain_pack_sources(topic: str) -> list[SourceRecord]:
     packs = []
     if "проект" in tl or "стейкхолдер" in tl or "требован" in tl:
         packs.extend(DOMAIN_PACKS["проектное управление"])
-    return [SourceRecord(title=t, authors=[a], year=y, source_type=st, standard_number=sn)
+        return [SourceRecord(title=t, authors=[a], year=y, source_type=st,
+                         standard_number=sn if sn else None, verified=True, score=3.5)
             for (t, a, y, st, sn) in packs]
 
 
@@ -566,31 +588,53 @@ async def collect_verified_sources(topic: str, count: int = 20, mode: str = "mix
     verified = await verify_sources_with_crossref(to_verify)
     final = _dedupe_sources(already_ok + verified)
     final = sorted(final, key=lambda x: x.score, reverse=True)
+    
+    if len(final) < count:
+        used_titles = {_norm(s.title)[:60] for s in final}
+        extras = [s for s in candidates
+                  if _norm(s.title)[:60] not in used_titles and s.score >= 2.0]
+        extras = sorted(extras, key=lambda x: x.score, reverse=True)
+        final = final + extras[:count - len(final)]
+
     return final[:count]
 
 
 OWN_SOURCES_VERIFY_PROMPT = """\
-Пользователь хочет оформить следующие источники:
+Пользователь предоставил следующие источники:
 {sources}
 
-Для каждого источника:
-1. Если реален и данные верны — пометь ✅ и оставь как есть.
-2. Если есть исправимая ошибка — исправь и пометь ✏️ с кратким пояснением.
-3. Если источник не существует или данных не хватает — пометь ⚠️ и предложи \
-2–3 реально существующих близких источника с полными данными.
+Для каждого источника выполни одно из трёх действий:
 
-Не придумывай альтернативы — только те о реальном существовании которых уверен.
+1. Источник реален и данные полные → ✅ [источник как есть]
 
-Формат:
-✅ [источник]
-✏️ [исправленный] — исправлено: [что]
-⚠️ Не найдено: «[текст]»
-   Похожие источники:
-   — [альтернатива 1]
-   — [альтернатива 2]
+2. Источник реален, но данных не хватает (нет года, издательства, тома, номера и т.д.) →
+   Восстанови недостающее из своих знаний. Добавляй ТОЛЬКО то, в чём уверен на 100%.
+   ✏️ [дополненный источник] — добавлено: [что именно]
+
+3. Источник не найден или название слишком размытое →
+   ⚠️ Не найдено: «[текст]»
+   Похожие реальные источники (только если уверен в их существовании):
+   — [альтернатива 1 с полными данными]
+   — [альтернатива 2 с полными данными]
+
+После всех проверок выведи строку:
+---ГОТОВО---
+[список источников для оформления — по одному на строке, без маркеров ✅/✏️/⚠️:]
+  — ✅: источник как есть
+  — ✏️: дополненный вариант
+  — ⚠️: пропустить (не включать в список)
 """
 
 
-async def verify_own_sources(sources_text: str) -> str:
+async def verify_own_sources(sources_text: str) -> tuple[str, str]:
+    """Returns (verification_report, sources_ready_for_formatting)."""
     prompt = OWN_SOURCES_VERIFY_PROMPT.format(sources=sources_text)
-    return await generate_text(prompt, max_tokens=2500)
+    raw = await generate_text(prompt, max_tokens=3000)
+
+    delimiter = "---ГОТОВО---"
+    if delimiter in raw:
+        parts = raw.split(delimiter, 1)
+        report = parts[0].strip()
+        completed = parts[1].strip()
+        return report, completed if completed else sources_text
+    return raw.strip(), sources_text
