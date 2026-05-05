@@ -18,9 +18,9 @@ REQUEST_TIMEOUT = httpx.Timeout(connect=8.0, read=20.0, write=8.0, pool=8.0)
 OPENALEX_TYPES_BY_MODE = {
     "articles": ["article"],
     "books": ["book", "book-chapter", "monograph"],
-    "standards": ["standard"],
-    "reports": ["report"],
-    "mixed": ["article", "book", "book-chapter", "monograph", "report", "standard"],
+    "standards": ["article", "book", "book-chapter", "monograph"],
+    "reports": ["article", "book", "book-chapter", "monograph"],
+    "mixed": ["article", "book", "book-chapter", "monograph"],
 }
 
 CROSSREF_ALLOWED_TYPES = {
@@ -262,6 +262,7 @@ def _domain_pack_sources(topic: str) -> list[SourceRecord]:
         return [SourceRecord(title=t, authors=[a], year=y, source_type=st,
                          standard_number=sn if sn else None, verified=True, score=3.5)
             for (t, a, y, st, sn) in packs]
+    return []
 
 
 def _select_mixed_sources(sources: list[SourceRecord], count: int) -> list[SourceRecord]:
