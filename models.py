@@ -19,7 +19,8 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     balance_generations = Column(Integer, default=0)
     selected_language = Column(String(50), default="ru")
-    free_generations_reset_at = Column(DateTime, nullable=True)  # дата последнего начисления бесплатных генераций
+    free_generations_reset_at = Column(DateTime, nullable=True)
+    referral_source = Column(String(255), nullable=True)  # откуда пришёл юзер
 
 
 class Generation(Base):
@@ -27,8 +28,8 @@ class Generation(Base):
 
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, nullable=False)
-    material_type = Column(String(50))   # report, abstract, presentation, sources
-    input_type = Column(String(50))      # topic, text, document
+    material_type = Column(String(50))
+    input_type = Column(String(50))
     topic = Column(Text, nullable=True)
     level = Column(String(50), nullable=True)
     volume = Column(String(50), nullable=True)
