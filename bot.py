@@ -6,7 +6,7 @@ from aiogram.types import Update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import TG_BOT_API_KEY
-from database import init_db, AsyncSessionLocal
+from database import init_db, run_migrations, AsyncSessionLocal
 from handlers import start, report, abstract, presentation, sources, tariffs
 from aiogram.types import BotCommand
 
@@ -29,17 +29,16 @@ async def main():
         raise RuntimeError("TG_BOT_API_KEY не задан в .env")
 
     await init_db()
-    logger.info("Database initialized")
+    await run_migrations()  # безопасно добавляет новые колонки при каждом запуске
+    logger.info("Database initialized and migrations applied")
 
     bot = Bot(token=TG_BOT_API_KEY)
     storage = MemoryStorage()
     dp = Dispatcher(storage=storage)
 
-    # Подключаем middleware для БД
     dp.message.middleware(db_middleware)
     dp.callback_query.middleware(db_middleware)
 
-    # Регистрируем роутеры
     dp.include_router(start.router)
     dp.include_router(report.router)
     dp.include_router(abstract.router)
@@ -48,15 +47,15 @@ async def main():
     dp.include_router(tariffs.router)
 
     await bot.set_my_commands([
-    BotCommand(command="start", description="Главное меню"),
-    BotCommand(command="report", description="Сделать доклад"),
-    BotCommand(command="abstract", description="Сделать реферат"),
-    BotCommand(command="presentation", description="Сделать презентацию"),
-    BotCommand(command="sources", description="Оформить источники"),
-    BotCommand(command="tariffs", description="Тарифы"),
-    BotCommand(command="settings", description="Настройки"),
-])
-    
+        BotCommand(command="start", description="Главное меню"),
+        BotCommand(command="report", description="Сделать доклад"),
+        BotCommand(command="abstract", description="Сделать реферат"),
+        BotCommand(command="presentation", description="Сделать презентацию"),
+        BotCommand(command="sources", description="Оформить источники"),
+        BotCommand(command="tariffs", description="Тарифы"),
+        BotCommand(command="settings", description="Настройки"),
+    ])
+
     logger.info("Bot starting...")
 
     try:
