@@ -29,8 +29,12 @@ SOURCES_LOCKED_TEXT = "🔒 В работе, будет доступно в бл
 @router.message(CommandStart())
 async def cmd_start(message: Message, db: AsyncSession, state: FSMContext):
     await state.clear()
-    user = await get_or_create_user(db, message)
 
+    # Достаём параметр из /start — например ?start=from_fibonacci
+    args = message.text.split(maxsplit=1)
+    referral_source = args[1].strip() if len(args) > 1 else None
+
+    user = await get_or_create_user(db, message, referral_source=referral_source)
     refreshed = await check_and_refresh_free_generations(db, user)
 
     await message.answer(START_TEXT, reply_markup=main_reply_menu())
@@ -51,13 +55,11 @@ async def cmd_start(message: Message, db: AsyncSession, state: FSMContext):
 @router.callback_query(lambda c: c.data == "menu:main")
 async def back_to_main(callback: CallbackQuery, state: FSMContext):
     await state.clear()
-
     await callback.message.answer(START_TEXT, reply_markup=main_reply_menu())
     await callback.message.answer(
         "Также можешь выбрать действие кнопками ниже 👇",
         reply_markup=main_menu_kb()
     )
-
     await callback.answer()
 
 
@@ -65,7 +67,6 @@ async def back_to_main(callback: CallbackQuery, state: FSMContext):
 async def reply_menu_report(message: Message, state: FSMContext):
     await state.clear()
     await state.set_state(ReportStates.choosing_input_type)
-
     await message.answer(
         "📝 <b>Доклад</b>\n\nВыбери вариант создания:",
         parse_mode="HTML",
@@ -77,7 +78,6 @@ async def reply_menu_report(message: Message, state: FSMContext):
 async def reply_menu_abstract(message: Message, state: FSMContext):
     await state.clear()
     await state.set_state(AbstractStates.choosing_input_type)
-
     await message.answer(
         "📚 <b>Реферат</b>\n\nВыбери вариант создания:",
         parse_mode="HTML",
@@ -109,7 +109,6 @@ async def sources_locked(callback: CallbackQuery):
 @router.message(F.text == "💳 Тарифы")
 async def reply_menu_tariffs(message: Message, state: FSMContext):
     await state.clear()
-
     await message.answer(
         "Выберите тариф для генерации учебных материалов",
         reply_markup=tariffs_kb()
@@ -119,7 +118,6 @@ async def reply_menu_tariffs(message: Message, state: FSMContext):
 @router.message(F.text == "⚙️ Настройки")
 async def reply_menu_settings(message: Message, state: FSMContext):
     await state.clear()
-
     await message.answer(
         "⚙️ Настройки\n\nПока доступен язык по умолчанию: Русский.",
         reply_markup=main_menu_kb()
