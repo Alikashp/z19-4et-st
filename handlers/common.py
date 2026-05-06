@@ -9,23 +9,24 @@ FREE_GENERATIONS_PER_MONTH = 10
 FREE_GENERATION_INTERVAL_DAYS = 30
 
 
-async def get_or_create_user(db: AsyncSession, message: Message) -> User:
-    """Возвращает пользователя из БД или создаёт нового с 10 бесплатными генерациями."""
+async def get_or_create_user(
+    db: AsyncSession,
+    message: Message,
+    referral_source: str | None = None,
+) -> User:
     result = await db.execute(
         select(User).where(User.telegram_id == message.from_user.id)
     )
     user = result.scalar_one_or_none()
     if not user:
         now = datetime.utcnow()
-        # username может быть None — это нормально, поле nullable
-        username = message.from_user.username or None
-        first_name = message.from_user.first_name or None
         user = User(
             telegram_id=message.from_user.id,
-            username=username,
-            first_name=first_name,
+            username=message.from_user.username or None,
+            first_name=message.from_user.first_name or None,
             balance_generations=FREE_GENERATIONS_PER_MONTH,
             free_generations_reset_at=now,
+            referral_source=referral_source,  # None если пришёл напрямую
         )
         db.add(user)
         await db.commit()
@@ -34,10 +35,6 @@ async def get_or_create_user(db: AsyncSession, message: Message) -> User:
 
 
 async def check_and_refresh_free_generations(db: AsyncSession, user: User) -> bool:
-    """
-    Проверяет, прошло ли 30 дней с последнего начисления бесплатных генераций.
-    Если да — начисляет ещё 10 и обновляет дату. Возвращает True, если генерации были добавлены.
-    """
     now = datetime.utcnow()
     reset_at = user.free_generations_reset_at
 
@@ -60,10 +57,6 @@ async def check_balance(
     callback: CallbackQuery | None = None,
     message: Message | None = None,
 ) -> bool:
-    """
-    Проверяет баланс пользователя.
-    Если баланс 0 — отправляет сообщение с предложением купить тариф и возвращает False.
-    """
     user = await get_user_by_telegram_id(db, telegram_id)
     if not user or user.balance_generations <= 0:
         text = (
@@ -79,7 +72,6 @@ async def check_balance(
 
 
 async def deduct_generation(db: AsyncSession, telegram_id: int):
-    """Списывает одну генерацию с баланса пользователя."""
     user = await get_user_by_telegram_id(db, telegram_id)
     if user and user.balance_generations > 0:
         user.balance_generations -= 1
