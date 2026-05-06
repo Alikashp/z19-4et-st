@@ -13,6 +13,8 @@ async def init_db():
 
 
 async def run_migrations():
+    # Каждая миграция — отдельная транзакция.
+    # Иначе в PostgreSQL первая ошибка убивает всю транзакцию и остальные не выполняются.
     async with engine.begin() as conn:
         try:
             await conn.execute(text(
@@ -22,6 +24,7 @@ async def run_migrations():
         except Exception:
             pass
 
+    async with engine.begin() as conn:
         try:
             await conn.execute(text(
                 "ALTER TABLE users ADD COLUMN referral_source VARCHAR(255)"
