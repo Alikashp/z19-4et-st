@@ -13,7 +13,7 @@ def main_reply_menu():
             ],
             [
                 KeyboardButton(text="📊 Сделать презентацию"),
-                KeyboardButton(text="🔗 Оформить источники"),
+                KeyboardButton(text="🔒 Оформить источники"),
             ],
             [
                 KeyboardButton(text="💳 Тарифы"),
@@ -34,7 +34,7 @@ def main_menu_kb() -> InlineKeyboardMarkup:
     )
     builder.row(
         InlineKeyboardButton(text="📊 Сделать презентацию", callback_data="menu:presentation"),
-        InlineKeyboardButton(text="🔗 Оформить источники", callback_data="menu:sources"),
+        InlineKeyboardButton(text="🔒 Оформить источники", callback_data="sources:locked"),
     )
     builder.row(
         InlineKeyboardButton(text="💳 Тарифы", callback_data="menu:tariffs"),
@@ -113,7 +113,7 @@ def after_report_kb(material_text: str, material_data: str) -> InlineKeyboardMar
     )
     builder.row(
         InlineKeyboardButton(text="❓ Вопросы и ответы", callback_data=f"followup:{material_data}:qa"),
-        InlineKeyboardButton(text="🔗 Оформить источники", callback_data="menu:sources"),
+        InlineKeyboardButton(text="🔒 Оформить источники", callback_data="sources:locked"),
     )
     builder.row(InlineKeyboardButton(text="⬅️ Вернуться в главное меню", callback_data="menu:main"))
     return builder.as_markup()
