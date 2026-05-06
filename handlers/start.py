@@ -23,13 +23,14 @@ START_TEXT = (
     "Выбери, что хочешь сделать 👇"
 )
 
+SOURCES_LOCKED_TEXT = "🔒 В работе, будет доступно в ближайшие дни"
+
 
 @router.message(CommandStart())
 async def cmd_start(message: Message, db: AsyncSession, state: FSMContext):
     await state.clear()
     user = await get_or_create_user(db, message)
 
-    # Проверяем обновление бесплатных генераций (раз в 30 дней)
     refreshed = await check_and_refresh_free_generations(db, user)
 
     await message.answer(START_TEXT, reply_markup=main_reply_menu())
@@ -94,16 +95,15 @@ async def reply_menu_presentation(message: Message, state: FSMContext):
     )
 
 
-@router.message(F.text == "🔗 Оформить источники")
-async def reply_menu_sources(message: Message, state: FSMContext):
+@router.message(F.text == "🔒 Оформить источники")
+async def reply_menu_sources_locked(message: Message, state: FSMContext):
     await state.clear()
-    await state.set_state(SourcesStates.choosing_variant)
+    await message.answer(SOURCES_LOCKED_TEXT)
 
-    await message.answer(
-        "🔗 <b>Оформление источников</b>\n\nВыбери вариант:",
-        parse_mode="HTML",
-        reply_markup=sources_variant_kb()
-    )
+
+@router.callback_query(lambda c: c.data == "sources:locked")
+async def sources_locked(callback: CallbackQuery):
+    await callback.answer(SOURCES_LOCKED_TEXT, show_alert=True)
 
 
 @router.message(F.text == "💳 Тарифы")
