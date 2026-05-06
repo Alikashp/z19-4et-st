@@ -19,6 +19,7 @@ class User(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     balance_generations = Column(Integer, default=0)
     selected_language = Column(String(50), default="ru")
+    free_generations_reset_at = Column(DateTime, nullable=True)  # дата последнего начисления бесплатных генераций
 
 
 class Generation(Base):
