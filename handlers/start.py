@@ -4,7 +4,7 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from handlers.common import get_or_create_user
+from handlers.common import get_or_create_user, check_and_refresh_free_generations
 from states import ReportStates, AbstractStates, SourcesStates
 from keyboards import (
     main_menu_kb,
@@ -27,9 +27,20 @@ START_TEXT = (
 @router.message(CommandStart())
 async def cmd_start(message: Message, db: AsyncSession, state: FSMContext):
     await state.clear()
-    await get_or_create_user(db, message)
+    user = await get_or_create_user(db, message)
+
+    # Проверяем обновление бесплатных генераций (раз в 30 дней)
+    refreshed = await check_and_refresh_free_generations(db, user)
 
     await message.answer(START_TEXT, reply_markup=main_reply_menu())
+
+    if refreshed:
+        await message.answer(
+            "🎁 Тебе начислены <b>10 бесплатных генераций</b> на этот месяц!\n"
+            "Приятной учёбы 🎓",
+            parse_mode="HTML",
+        )
+
     await message.answer(
         "Также можешь выбрать действие кнопками ниже 👇",
         reply_markup=main_menu_kb()
