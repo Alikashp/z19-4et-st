@@ -2,12 +2,13 @@ import asyncio
 import logging
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import Update
 from sqlalchemy.ext.asyncio import AsyncSession
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from config import TG_BOT_API_KEY
 from database import init_db, run_migrations, AsyncSessionLocal
 from handlers import start, report, abstract, presentation, sources, tariffs
+from services.scheduler import refresh_free_generations_for_all_users
 from aiogram.types import BotCommand
 
 logging.basicConfig(
@@ -18,7 +19,6 @@ logger = logging.getLogger(__name__)
 
 
 async def db_middleware(handler, event, data):
-    """Middleware: добавляет сессию БД в каждый хэндлер."""
     async with AsyncSessionLocal() as session:
         data["db"] = session
         return await handler(event, data)
@@ -29,8 +29,19 @@ async def main():
         raise RuntimeError("TG_BOT_API_KEY не задан в .env")
 
     await init_db()
-    await run_migrations()  # безопасно добавляет новые колонки при каждом запуске
+    await run_migrations()
     logger.info("Database initialized and migrations applied")
+
+    # Планировщик: проверяет всех юзеров раз в сутки
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(
+        refresh_free_generations_for_all_users,
+        trigger="interval",
+        hours=24,
+        id="free_generations_refresh",
+    )
+    scheduler.start()
+    logger.info("Scheduler started")
 
     bot = Bot(token=TG_BOT_API_KEY)
     storage = MemoryStorage()
@@ -61,6 +72,7 @@ async def main():
     try:
         await dp.start_polling(bot, allowed_updates=["message", "callback_query"])
     finally:
+        scheduler.shutdown()
         await bot.session.close()
         logger.info("Bot stopped")
 
