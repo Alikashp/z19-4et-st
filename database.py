@@ -13,14 +13,21 @@ async def init_db():
 
 
 async def run_migrations():
-    """Безопасно добавляет новые колонки к существующим таблицам. Данные не трогает."""
     async with engine.begin() as conn:
         try:
             await conn.execute(text(
-                "ALTER TABLE users ADD COLUMN free_generations_reset_at TIMESTAMP"
+                "ALTER TABLE users ADD COLUMN "
+                "free_generations_reset_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"
             ))
         except Exception:
-            pass  # колонка уже есть — всё ок
+            pass
+
+        try:
+            await conn.execute(text(
+                "ALTER TABLE users ADD COLUMN referral_source VARCHAR(255)"
+            ))
+        except Exception:
+            pass
 
 
 async def get_session() -> AsyncSession:
