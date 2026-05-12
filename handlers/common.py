@@ -2,7 +2,7 @@ from datetime import datetime
 from aiogram.types import Message, CallbackQuery
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from models import User
+from models import User, Generation
 from keyboards import no_balance_kb
 
 FREE_GENERATIONS_PER_MONTH = 10
@@ -76,3 +76,30 @@ async def deduct_generation(db: AsyncSession, telegram_id: int):
     if user and user.balance_generations > 0:
         user.balance_generations -= 1
         await db.commit()
+
+async def save_generation(
+    db: AsyncSession,
+    telegram_id: int,
+    material_type: str,
+    input_type: str | None = None,
+    topic: str | None = None,
+    level: str | None = None,
+    volume: str | None = None,
+    status: str = "completed",
+    result_file_path: str | None = None,
+):
+    user = await get_user_by_telegram_id(db, telegram_id)
+    if not user:
+        return
+    generation = Generation(
+        user_id=user.id,
+        material_type=material_type,
+        input_type=input_type,
+        topic=topic,
+        level=level,
+        volume=volume,
+        status=status,
+        result_file_path=result_file_path,
+    )
+    db.add(generation)
+    await db.commit()
