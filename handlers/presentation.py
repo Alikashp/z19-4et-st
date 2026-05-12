@@ -11,7 +11,7 @@ from keyboards import (
     fibonacci_redirect_kb,
 )
 from services.fibonacci_api import create_presentation
-from handlers.common import check_balance, deduct_generation
+from handlers.common import check_balance, deduct_generation, save_generation
 
 router = Router()
 
@@ -233,6 +233,13 @@ async def presentation_generate(callback: CallbackQuery, state: FSMContext, db: 
             design=data.get("design", "Стандартный"),
         )
         await deduct_generation(db, callback.from_user.id)
+        await save_generation(
+            db,
+            telegram_id=callback.from_user.id,
+            material_type="presentation",
+            input_type=data.get("input_type"),
+            topic=data.get("topic"),
+        )
         await msg.delete()
 
         await callback.message.answer("✅ <b>Презентация готова!</b>", parse_mode="HTML")
