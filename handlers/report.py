@@ -1,6 +1,5 @@
 import os
 import re
-from handlers.common import check_balance, deduct_generation, save_generation
 
 from aiogram import Router, F, Bot
 from aiogram.types import CallbackQuery, Message, FSInputFile
@@ -20,7 +19,7 @@ from prompts import report_prompt, LEVEL_LABELS, VOLUME_LABELS
 from services.llm import generate_text
 from services.file_generator import generate_pdf, get_preview
 from services.document_reader import read_document
-from handlers.common import check_balance, deduct_generation
+from handlers.common import check_balance, deduct_generation, save_generation
 
 
 router = Router()
