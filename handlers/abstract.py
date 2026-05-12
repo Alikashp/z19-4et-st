@@ -1,4 +1,5 @@
 import os
+from handlers.common import check_balance, deduct_generation, save_generation
 
 from aiogram import Router, F, Bot
 from aiogram.types import CallbackQuery, Message, FSInputFile
@@ -323,6 +324,16 @@ async def abstract_generate(callback: CallbackQuery, state: FSMContext, db: Asyn
         preview = get_preview(full_text, lines=3)
 
         await deduct_generation(db, callback.from_user.id)
+        await save_generation(
+            db,
+            telegram_id=callback.from_user.id,
+            material_type="abstract",
+            input_type=data.get("input_type"),
+            topic=data.get("topic"),
+            level=data.get("level"),
+            volume=data.get("volume"),
+            result_file_path=pdf_path,
+        )
 
         await msg.delete()
 
